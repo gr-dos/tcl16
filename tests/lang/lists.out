@@ -1,0 +1,25 @@
+4
+c d
+
+b {c d}
+{c d} e
+X a b {c d} e
+a b X Y {c d} e
+a b {c d} e Z
+a B {c d} e
+a
+b {c d} e
+a b {c d} e f {g h}
+3
+2
+-1
+apple banana fig pear
+a b c d
+a,b,c
+a b c
+a b {} c
+a b c
+a b {} c
+500
+499
+497 498 499

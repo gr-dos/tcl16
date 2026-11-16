@@ -1,0 +1,331 @@
+Stop, with a message, instead of corrupting memory when an allocation
+fails or a size does not fit in an int (docs/M1-REPORT.md, section 7.4).
+
+- Without TCL_MEM_DEBUG, ckalloc was malloc, and Tcl 6 never checks the
+  result. It is now TclCkalloc, which panics ("tcl16: out of memory")
+  if malloc returns NULL.
+- Tcl's string and list sizes are ints, 16 bits on DOS, and its buffers
+  grow by doubling, which overflows from 16384 bytes (doubling a
+  20480-byte string, or "append s $s" on a 30000-byte one, overran the
+  heap and hung DOSBox-X). The growth of variable values
+  (Tcl_SetVar2), the result (Tcl_AppendResult, SetupAppendBuffer), the
+  format buffer, the parse buffer (TclExpandParseValue) and the sizes
+  of Tcl_ScanElement, Tcl_Merge and Tcl_Concat are worked out in long
+  by the new TclGrowSize, which keeps them within INT_MAX and panics
+  ("tcl16: string or list too long") when even the size needed does
+  not fit; and the comparisons that decide whether those buffers must
+  grow (Tcl_SetVar2, format) are made in long too, since 30000 + 30000
+  is negative in an int and the buffer was then overrun. These are the
+  sites found in M1, not an audit of every int-sized length.
+- format's field width and precision were read with atoi, so that
+  "%40000s" became "%-25536s" and overran the result: they are read
+  in long and are an error past INT_MAX.
+- panic flushes stdout first, so that output printed before it is
+  kept.
+
+diff -ru a/panic.c b/panic.c
+--- a/panic.c
++++ b/panic.c
+@@ -20,6 +20,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
++#include <limits.h>
+ 
+ /*
+  *----------------------------------------------------------------------
+@@ -43,9 +44,72 @@
+ {
+     va_list argList;
+ 
++    (void) fflush(stdout);	/* tcl16: keep what was printed before. */
+     va_start(argList, format);
+     (void) vfprintf(stderr, format, argList);
+     va_end(argList);
+     (void) fflush(stderr);
+     abort();
+ }
++
++/*
++ *----------------------------------------------------------------------
++ *
++ * TclCkalloc --
++ *
++ *	tcl16: ckalloc without TCL_MEM_DEBUG. Tcl 6 never checks what
++ *	malloc returns, so running out of memory would write through a
++ *	null pointer; this stops the interpreter with a message instead.
++ *
++ * Results:
++ *	The new block.
++ *
++ * Side effects:
++ *	Panics if there is no memory.
++ *
++ *----------------------------------------------------------------------
++ */
++
++char *
++TclCkalloc(unsigned int size)
++{
++    char *p = (char *) malloc(size);
++
++    if (p == NULL) {
++	panic("tcl16: out of memory (%u bytes wanted)\n", size);
++    }
++    return p;
++}
++
++/*
++ *----------------------------------------------------------------------
++ *
++ * TclGrowSize --
++ *
++ *	tcl16: the size of a growing buffer, worked out in long because
++ *	Tcl's sizes are ints, which have 16 bits on DOS: "want" (usually
++ *	twice the old size) if an int can hold it, else INT_MAX, but at
++ *	least "need".
++ *
++ * Results:
++ *	The size, an int.
++ *
++ * Side effects:
++ *	Panics if even "need" is more than an int can hold: one string or
++ *	list of more than INT_MAX bytes.
++ *
++ *----------------------------------------------------------------------
++ */
++
++int
++TclGrowSize(long need, long want)
++{
++    if ((need < 0) || (need > INT_MAX)) {
++	panic("tcl16: string or list too long (%ld bytes; the most is %d)\n",
++		need, INT_MAX);
++    }
++    if ((want < need) || (want > INT_MAX)) {
++	want = (want < need) ? need : INT_MAX;
++    }
++    return (int) want;
++}
+diff -ru a/tcl.h b/tcl.h
+--- a/tcl.h
++++ b/tcl.h
+@@ -248,7 +248,7 @@
+ 
+ #else
+ 
+-#  define ckalloc(x) malloc(x)
++#  define ckalloc(x) TclCkalloc(x)
+ #  define ckfree(x)  free(x)
+ #  define ckrealloc(x,y) realloc(x,y)
+ #  define Tcl_DumpActiveMemory(x)
+@@ -293,6 +293,7 @@
+ 			    char *cmdName, Tcl_CmdProc *proc,
+ 			    ClientData clientData,
+ 			    Tcl_CmdDeleteProc *deleteProc));
++EXTERN char *		TclCkalloc _ANSI_ARGS_((unsigned int size));
+ EXTERN Tcl_Interp *	Tcl_CreateInterp _ANSI_ARGS_((void));
+ EXTERN int		Tcl_CreatePipeline _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    int argc, char **argv, int **pidArrayPtr,
+diff -ru a/tclCmdAH.c b/tclCmdAH.c
+--- a/tclCmdAH.c
++++ b/tclCmdAH.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include "tclInt.h"
++#include <limits.h>
+ 
+ 
+ /*
+@@ -733,10 +734,19 @@
+ 	    format++;
+ 	}
+ 	if (isdigit(*format)) {
+-	    width = atoi(format);
++	    long value = 0;	/* tcl16: atoi overflowed an int. */
++
+ 	    do {
++		if (value <= INT_MAX) {
++		    value = 10*value + (*format - '0');
++		}
+ 		format++;
+ 	    } while (isdigit(*format));
++	    if (value > INT_MAX) {
++		interp->result = "field width too large";
++		goto fmtError;
++	    }
++	    width = (int) value;
+ 	} else if (*format == '*') {
+ 	    if (argc <= 0) {
+ 		goto notEnoughArgs;
+@@ -760,10 +770,19 @@
+ 	    format++;
+ 	}
+ 	if (isdigit(*format)) {
+-	    precision = atoi(format);
++	    long value = 0;	/* tcl16: atoi overflowed an int. */
++
+ 	    do {
++		if (value <= INT_MAX) {
++		    value = 10*value + (*format - '0');
++		}
+ 		format++;
+ 	    } while (isdigit(*format));
++	    if (value > INT_MAX) {
++		interp->result = "precision too large";
++		goto fmtError;
++	    }
++	    precision = (int) value;
+ 	} else if (*format == '*') {
+ 	    if (argc <= 0) {
+ 		goto notEnoughArgs;
+@@ -869,11 +888,12 @@
+ 	if (width > size) {
+ 	    size = width;
+ 	}
+-	if ((dstSize + size) > dstSpace) {
++	if (((long) dstSize + size) > dstSpace) {
+ 	    char *newDst;
+ 	    int newSpace;
+ 
+-	    newSpace = 2*(dstSize + size);
++	    newSpace = TclGrowSize((long) dstSize + size + 1,
++		    2L*((long) dstSize + size));
+ 	    newDst = (char *) ckalloc((unsigned) newSpace+1);
+ 	    if (dstSize != 0) {
+ 		memcpy((VOID *) newDst, (VOID *) dst, dstSize);
+diff -ru a/tclInt.h b/tclInt.h
+--- a/tclInt.h
++++ b/tclInt.h
+@@ -656,6 +656,7 @@
+ 			    char *procName));
+ extern int		TclGetFrame _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, CallFrame **framePtrPtr));
++extern int		TclGrowSize _ANSI_ARGS_((long need, long want));
+ extern int		TclStackExhausted _ANSI_ARGS_((void));
+ extern int		TclGetLong _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, long *longPtr));
+diff -ru a/tclParse.c b/tclParse.c
+--- a/tclParse.c
++++ b/tclParse.c
+@@ -828,11 +828,8 @@
+      */
+ 
+     newSpace = (pvPtr->end - pvPtr->buffer) + 1;
+-    if (newSpace < needed) {
+-	newSpace += needed;
+-    } else {
+-	newSpace += newSpace;
+-    }
++    newSpace = TclGrowSize((long) (pvPtr->next - pvPtr->buffer) + needed + 1,
++	    (newSpace < needed) ? (long) newSpace + needed : 2L*newSpace);
+     new = (char *) ckalloc((unsigned) newSpace);
+ 
+     /*
+diff -ru a/tclUtil.c b/tclUtil.c
+--- a/tclUtil.c
++++ b/tclUtil.c
+@@ -531,7 +531,7 @@
+      * two spaces for braces.
+      */
+ 
+-    return 2*(p-string) + 2;
++    return TclGrowSize(2L*(p-string) + 2, 2L*(p-string) + 2);
+ }
+ 
+ /*
+@@ -676,7 +676,7 @@
+ {
+ #   define LOCAL_SIZE 20
+     int localFlags[LOCAL_SIZE], *flagPtr;
+-    int numChars;
++    long numChars;		/* tcl16: a long, see TclGrowSize. */
+     char *result;
+     register char *dst;
+     int i;
+@@ -699,7 +699,7 @@
+      * Pass two: copy into the result area.
+      */
+ 
+-    result = (char *) ckalloc((unsigned) numChars);
++    result = (char *) ckalloc((unsigned) TclGrowSize(numChars, numChars));
+     dst = result;
+     for (i = 0; i < argc; i++) {
+ 	numChars = Tcl_ConvertElement(argv[i], dst, flagPtr[i]);
+@@ -743,14 +743,15 @@
+     int argc;			/* Number of strings to concatenate. */
+     char **argv;		/* Array of strings to concatenate. */
+ {
+-    int totalSize, i;
++    long totalSize;		/* tcl16: a long, see TclGrowSize. */
++    int i;
+     register char *p;
+     char *result;
+ 
+     for (totalSize = 1, i = 0; i < argc; i++) {
+ 	totalSize += strlen(argv[i]) + 1;
+     }
+-    result = (char *) ckalloc((unsigned) totalSize);
++    result = (char *) ckalloc((unsigned) TclGrowSize(totalSize, totalSize));
+     if (argc == 0) {
+ 	*result = '\0';
+ 	return result;
+@@ -1018,7 +1019,7 @@
+     va_list argList;
+     register Interp *iPtr;
+     char *string;
+-    int newSpace;
++    long newSpace;		/* tcl16: a long, see TclGrowSize. */
+ 
+     /*
+      * First, scan through all the arguments to see how much space is
+@@ -1044,7 +1045,8 @@
+ 
+     if ((iPtr->result != iPtr->appendResult)
+ 	   || ((newSpace + iPtr->appendUsed) >= iPtr->appendAvl)) {
+-       SetupAppendBuffer(iPtr, newSpace);
++       (void) TclGrowSize(newSpace + iPtr->appendUsed + 1, 0L);
++       SetupAppendBuffer(iPtr, (int) newSpace);
+     }
+ 
+     /*
+@@ -1170,14 +1172,15 @@
+ 	}
+ 	iPtr->appendUsed = strlen(iPtr->result);
+     }
+-    totalSpace = newSpace + iPtr->appendUsed;
++    totalSpace = TclGrowSize((long) newSpace + iPtr->appendUsed + 1,
++	    (long) newSpace + iPtr->appendUsed);
+     if (totalSpace >= iPtr->appendAvl) {
+ 	char *new;
+ 
+ 	if (totalSpace < 100) {
+ 	    totalSpace = 200;
+ 	} else {
+-	    totalSpace *= 2;
++	    totalSpace = TclGrowSize((long) totalSpace, 2L*totalSpace);
+ 	}
+ 	new = (char *) ckalloc((unsigned) totalSpace);
+ 	strcpy(new, iPtr->result);
+diff -ru a/tclVar.c b/tclVar.c
+--- a/tclVar.c
++++ b/tclVar.c
+@@ -435,14 +435,12 @@
+      * new value.  If not, enlarge the variable's space.
+      */
+ 
+-    if ((length + varPtr->valueLength) >= varPtr->valueSpace) {
++    if (((long) length + varPtr->valueLength) >= varPtr->valueSpace) {
+ 	Var *newVarPtr;
+ 	int newSize;
+ 
+-	newSize = 2*varPtr->valueSpace;
+-	if (newSize <= (length + varPtr->valueLength)) {
+-	    newSize += length;
+-	}
++	newSize = TclGrowSize((long) length + varPtr->valueLength + 1,
++		2L*varPtr->valueSpace + length);
+ 	newVarPtr = NewVar(newSize);
+ 	newVarPtr->valueLength = varPtr->valueLength;
+ 	newVarPtr->upvarUses = varPtr->upvarUses;

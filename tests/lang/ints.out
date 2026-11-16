@@ -1,0 +1,17 @@
+70001
+2147483647
+32768
+-32768
+1:integer value too large to represent: "99999999999"
+1:expected integer but got "1.5"
+40000
+abc 5 def
+ffffffff
+4294967295
+FFFF
+100000
+70000|ff    |
+-25536
+a
+99%
+50000

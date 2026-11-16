@@ -1,0 +1,16 @@
+1:plain
+1:divide by zero
+1:invalid command name: "nosuch"
+1:can't read "undefined": no such variable
+1:wrong # args: should be "lindex list index"
+1:syntax error in expression "1 +"
+1:can't read "notset": no such variable
+1:can't read "x": no such variable
+1:deep
+MYCODE 42
+2:early
+3:
+4:
+0:1
+inproc
+1:wrong # args: should be "catch command ?varName?"

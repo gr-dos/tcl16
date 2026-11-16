@@ -1,0 +1,30 @@
+# Lists.
+set l [list a b {c d} e]
+puts [llength $l]
+puts [lindex $l 2]
+puts [lindex $l 10]
+puts [lrange $l 1 2]
+puts [lrange $l 2 end]
+puts [linsert $l 0 X]
+puts [linsert $l 2 X Y]
+puts [linsert $l 99 Z]
+puts [lreplace $l 1 1 B]
+puts [lreplace $l 1 end]
+puts [lreplace $l 0 0]
+lappend l f {g h}
+puts $l
+puts [lsearch $l e]
+puts [lsearch $l c*]
+puts [lsearch $l nope]
+puts [lsort {pear apple fig banana}]
+puts [concat a {b c} {} {d}]
+puts [join {a b c} ,]
+puts [join {a b c}]
+puts [split "a:b::c" :]
+puts [split "abc" {}]
+puts [split "a b  c"]
+set big {}
+for {set i 0} {$i < 500} {incr i} {lappend big $i}
+puts [llength $big]
+puts [lindex $big 499]
+puts [lrange $big 497 end]

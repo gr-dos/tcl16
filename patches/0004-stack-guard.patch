@@ -1,0 +1,47 @@
+Stop nesting Tcl_Eval before the stack runs out (docs/M1-REPORT.md,
+section 7.3).
+
+Tiny Tcl stops at MAX_NESTING_DEPTH (100) nested Tcl_Eval calls, but on an
+8086 a level costs one to two kilobytes of stack, so a 32 KB stack is gone
+after about 15 levels of a recursive proc. Open Watcom's stack check, at
+function entry and with a small margin, does not cover the C library,
+which is compiled without it: sprintf and its kind then run below the
+stack and overwrite DGROUP (seen as a corrupt MCB chain and writes into
+the ROM BIOS under DOSBox-X). Tcl_Eval now also fails, with a Tcl error,
+when TclStackExhausted() says that less than a safe margin is left; tcl16
+supplies it (src/stack.c).
+
+diff -ru a/tclBasic.c b/tclBasic.c
+--- a/tclBasic.c
++++ b/tclBasic.c
+@@ -506,6 +506,19 @@
+     }
+ 
+     /*
++     * tcl16: and stop before the stack runs out. Each level costs one to
++     * two kilobytes of an 8086's stack, so MAX_NESTING_DEPTH alone does
++     * not keep it within its segment, and the C library's own functions
++     * do no stack checking (docs/M1-REPORT.md, section 7.3).
++     */
++
++    if (TclStackExhausted()) {
++	iPtr->numLevels--;
++	iPtr->result =  "too many nested calls to Tcl_Eval (out of stack)";
++	return TCL_ERROR;
++    }
++
++    /*
+      * Initialize the area in which command copies will be assembled.
+      */
+ 
+diff -ru a/tclInt.h b/tclInt.h
+--- a/tclInt.h
++++ b/tclInt.h
+@@ -656,6 +656,7 @@
+ 			    char *procName));
+ extern int		TclGetFrame _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, CallFrame **framePtrPtr));
++extern int		TclStackExhausted _ANSI_ARGS_((void));
+ extern int		TclGetLong _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, long *longPtr));
+ extern int		TclGetListIndex _ANSI_ARGS_((Tcl_Interp *interp,
