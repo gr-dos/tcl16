@@ -1,0 +1,19 @@
+# Tcl 6.7's own test suite with the Tcl 6.7 DOS port (make test-suite-tcl67;
+# scripts/run-tcl-suite): the failures expected, as "FILE TEST..." lines,
+# "stopped" for a file that does not finish. docs/M2-REPORT.md, section 8.
+#
+# These files make their fixtures with exec (cat, pwd, mkdir) at the top
+# level. Under DOSBox-X, COMMAND /C reports a nonzero status for every
+# external program, even one that exits 0, and the port's exec, which
+# runs commands through system(), then fails, so the file stops at its
+# first fixture.
+cd stopped
+exec stopped
+file stopped
+glob stopped
+info stopped
+open stopped
+source stopped
+# The runner names the file in upper case (INFO.TST); the test expects
+# the name it was given in lower case.
+info info-13.2

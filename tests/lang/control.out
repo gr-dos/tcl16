@@ -9,8 +9,5 @@ sum 15
 foreach a
 case a*
 case default
-loop 0
-loop 1
-loop 2
 n 2000
 0

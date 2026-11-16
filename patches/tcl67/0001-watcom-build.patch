@@ -1,0 +1,198 @@
+Build Peter Sprenger's 1993 MS-DOS port of Tcl 6.7 with Open Watcom C for
+16-bit DOS (docs/M2-REPORT.md, section 4). The port builds with Borland
+C++ 3.x from a project file (TCL.PRJ).
+
+- msdos.h: include Open Watcom's headers in place of Borland's <dir.h>,
+  <alloc.h>, <bios.h> and <sys\stat.h>, and the C library's <errno.h> in
+  place of tclerrno.h (a copy of Borland's errno.h, which tcl16 does not
+  use or redistribute); drop the "#define ERANGE 34" that went with it.
+- msdos.c: drop Borland's "_fmode = O_TEXT" (Open Watcom opens files in
+  text mode by default) and "_stklen" (the stack size is a link option);
+  replace biostime(0, 0L), used by "time", with TclDosTicks, which reads
+  the BIOS tick count at 0040:006C.
+- msdos.h, msdos.c: prototypes for the Unix stand-ins geteuid and a new
+  readlink, which fails with EINVAL because DOS has no symbolic links
+  ("file readlink" called it with no declaration); mktemp is _mktemp.
+- tclEnv.c: rename the private setenv/unsetenv, which keep environ in
+  step with the env array, to static TclSetEnv/TclUnsetEnv, so that they
+  do not collide with the C library's (as M1's patch 0001 does for Tiny
+  Tcl).
+- tclUnixStr.c: Open Watcom defines EDEADLOCK equal to EDEADLK; leave
+  out the duplicate case, as upstream already does for EWOULDBLOCK.
+
+diff -ru a/msdos.c b/msdos.c
+--- a/msdos.c
++++ b/msdos.c
+@@ -10,8 +10,16 @@
+ #include "tclInt.h"
+ #include "msdos.h"
+ 
+-extern _fmode = O_TEXT;
+-extern unsigned _stklen =12000U;
++/* tcl16: Open Watcom opens files in text mode by default, as _fmode =
++ * O_TEXT did for Borland; the stack size is a link option. */
++
++/* tcl16: Borland's biostime(0, 0L): the BIOS tick count, 18.2 a second,
++ * at 0040:006C (it wraps at midnight, as biostime's did). */
++long
++TclDosTicks()
++{
++    return *(long volatile __far *) 0x0040006CL;
++}
+ 
+ 
+ 
+@@ -336,7 +344,7 @@
+ 	gettimeofday(&start, &tz);
+ #else
+ 	/* start = times(&dummy2); */
+-	start = biostime(0,0L); /* use 18.2hz msdos ticks */
++	start = TclDosTicks(); /* use 18.2hz msdos ticks */
+ #endif
+ 	for (i = count ; i > 0; i--) {
+ 	result = Tcl_Eval(interp, argv[1], 0, (char **) NULL);
+@@ -358,7 +366,7 @@
+ #else
+ /*	stop = times(&dummy2);
+ 	timePer = (((double) (stop - start))*1000000.0)/CLK_TCK; */
+-	stop = biostime(0,0L);
++	stop = TclDosTicks();
+ 	timePer = ((double) (stop - start))*54.945; /* 18.2hz adjust for msdos */
+ #endif
+ 	Tcl_ResetResult(interp);
+@@ -718,3 +726,17 @@
+ {
+ 	return(0);
+ }
++
++/*
++ * tcl16: "file readlink": DOS has no symbolic links, so every file is
++ * not one (EINVAL, as for a Unix file that is not a link).
++ */
++
++int readlink(path, buf, size)
++	const char *path;
++	char *buf;
++	int size;
++{
++	errno = EINVAL;
++	return(-1);
++}
+diff -ru a/msdos.h b/msdos.h
+--- a/msdos.h
++++ b/msdos.h
+@@ -16,20 +16,25 @@
+ char *to_slash(char *string);
+ char *to_bslash(char *string);
+ 
+-#define ERANGE 34
+-
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <bios.h>
+ #include <dos.h>
+-#include <dirent.h>
+-#include <sys\stat.h>
++#include <direct.h>
++#include <sys/types.h>
++#include <sys/stat.h>
+ #include <fcntl.h>
+-#include <dir.h>
+ #include <io.h>
+-#include <alloc.h>
+-#include "tclerrno.h"
++#include <malloc.h>
++#include <errno.h>
++
++/* tcl16: Borland's biostime(0, 0L), the BIOS tick count (msdos.c). */
++long TclDosTicks(void);
++/* tcl16: Unix calls msdos.c stands in for, and Open Watcom's name for
++ * mktemp. */
++int geteuid(void);
++int readlink(const char *path, char *buf, int size);
++#define mktemp _mktemp
+ 
+ 
+ #define F_SEP  '/'  /* define File Separator to msdos */
+diff -ru a/tclEnv.c b/tclEnv.c
+--- a/tclEnv.c
++++ b/tclEnv.c
+@@ -61,9 +61,9 @@
+ 				int flags));
+ static int		FindVariable _ANSI_ARGS_((CONST char *name,
+ 				int *lengthPtr));
+-void			setenv _ANSI_ARGS_((CONST char *name,
++static void		TclSetEnv _ANSI_ARGS_((CONST char *name,
+ 				CONST char *value));
+-void			unsetenv _ANSI_ARGS_((CONST char *name));
++static void		TclUnsetEnv _ANSI_ARGS_((CONST char *name));
+ 
+ /*
+  *----------------------------------------------------------------------
+@@ -187,7 +187,7 @@
+ /*
+  *----------------------------------------------------------------------
+  *
+- * setenv --
++ * TclSetEnv --
+  *
+  *	Set an environment variable, replacing an existing value
+  *	or creating a new variable if there doesn't exist a variable
+@@ -203,8 +203,8 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-void
+-setenv(name, value)
++static void
++TclSetEnv(name, value)
+ 	CONST char *name;		/* Name of variable whose value is to be
+ 				 * set. */
+ 	CONST char *value;		/* New value for variable. */
+@@ -306,7 +306,7 @@
+ /*
+  *----------------------------------------------------------------------
+  *
+- * unsetenv --
++ * TclUnsetEnv --
+  *
+  *	Remove an environment variable, updating the "env" arrays
+  *	in all interpreters managed by us.
+@@ -320,8 +320,8 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-void
+-unsetenv(name)
++static void
++TclUnsetEnv(name)
+ 	CONST char *name;			/* Name of variable to remove. */
+ {
+ 	int index, dummy;
+@@ -427,11 +427,11 @@
+      */
+ 
+     if (flags & TCL_TRACE_WRITES) {
+-	setenv(name2, Tcl_GetVar2(interp, "env", name2, TCL_GLOBAL_ONLY));
++	TclSetEnv(name2, Tcl_GetVar2(interp, "env", name2, TCL_GLOBAL_ONLY));
+     }
+ 
+     if (flags & TCL_TRACE_UNSETS) {
+-	unsetenv(name2);
++	TclUnsetEnv(name2);
+ 	}
+     return NULL;
+ }
+diff -ru a/tclUnixStr.c b/tclUnixStr.c
+--- a/tclUnixStr.c
++++ b/tclUnixStr.c
+@@ -126,7 +126,7 @@
+ #if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK))
+ 	case EDEADLK: return "EDEADLK";
+ #endif
+-#ifdef EDEADLOCK
++#if defined(EDEADLOCK) && (!defined(EDEADLK) || (EDEADLOCK != EDEADLK))
+ 	case EDEADLOCK: return "EDEADLOCK";
+ #endif
+ #ifdef EDESTADDRREQ

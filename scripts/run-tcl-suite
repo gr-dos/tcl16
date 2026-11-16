@@ -1,0 +1,187 @@
+#!/usr/bin/env perl
+
+use 5.036;
+use warnings;
+use autodie qw(open close);
+use File::Basename qw(basename);
+use File::Copy qw(copy);
+use File::Path qw(make_path remove_tree);
+use File::Spec;
+
+=head1 NAME
+
+run-tcl-suite - run Tcl 6.7's own test suite with a DOS TCL.EXE
+
+=head1 SYNOPSIS
+
+  scripts/run-tcl-suite TCL.EXE TESTSDIR UTILDIR OUT [BASELINE]
+
+  (make test-suite-tcl67, make test-suite: TESTSDIR is
+   build/tcl67/port/TESTS, UTILDIR build/tcl67/port/UTIL)
+
+=head1 DESCRIPTION
+
+Tcl 6.7's tests (the port's F<TESTS/*.TST>, Tcl 6.7's F<tests/*.test>
+renamed for DOS) define C<test> in F<DEFS>, which prints nothing for a
+test that passes and, for one that fails, the test and C<---- NAME
+FAILED>. Each F<.TST> file runs in its own DOSBox-X session (core normal,
+cputype 8086, CGA machine), so that a crash in one does not hide the
+others, as C<TCL W.TCL FILE.TST>, where F<W.TCL> sources it inside
+C<catch> and then prints a marker. A file whose marker is missing
+crashed, hung or exited; one where DOSBox-X logged a write to ROM
+corrupted memory.
+
+The work directory, OUT/NAME for each file, holds TCL.EXE, every file of
+TESTSDIR, made LF text with no DOS end-of-file byte (^Z), and the port's
+UNIX-like utilities from UTILDIR (F<cat>,
+F<wc>, F<whoami>, F<pwd>, F<printenv>), which F<exec.tst> runs. They are
+part of the fetched archive and are not redistributed.
+
+Writes OUT/report.txt: for each file, the failed tests, or C<crashed>,
+C<rom-write> or C<error: ...>. With BASELINE, a file of lines C<FILE
+TEST...> listing the failures expected (C<stopped> for a file that does
+not finish), exits 1 if any other test fails, and reports baseline
+entries that now pass.
+
+Environment: DOSBOX (default dosbox-x), DOSBOX_TIMEOUT (seconds per
+file, default 300), JOBS (sessions at once, default 4).
+
+=cut
+
+my ($exe, $tests, $util, $out, $baseline) = @ARGV;
+die "usage: $0 TCL.EXE TESTSDIR UTILDIR OUT [BASELINE]\n" unless defined $out;
+my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
+my $timeout = $ENV{DOSBOX_TIMEOUT} // 300;
+my $jobs = $ENV{JOBS} // 4;
+$out = File::Spec->rel2abs($out);
+remove_tree($out);
+make_path($out);
+
+sub slurp ($f) { open my $h, '<:raw', $f; local $/; my $s = <$h>; close $h; $s }
+
+my @files = sort map { basename($_) } grep { /\.tst$/i } glob "$tests/*";
+die "no .TST files in $tests\n" unless @files;
+
+sub start ($file) {
+    (my $name = lc $file) =~ s/\.tst$//;
+    my $w = "$out/$name";
+    make_path($w);
+    copy($exe, "$w/TCL.EXE") or die "copy $exe: $!\n";
+    for my $f (glob("$tests/*"), glob("$util/*.EXE")) {
+        next if -d $f;
+        copy($f, "$w/" . uc(basename($f))) or die "copy $f: $!\n";
+    }
+    # The port's text files have DOS line ends (CRLF), and some end with
+    # the DOS end-of-file byte (^Z); Tiny Tcl's source reads both as part
+    # of the script (tests/tinytcl/crlf.tcl, tests/tinytcl/ctrlz.tcl).
+    # Make them LF text, so that the suite compares the languages.
+    for my $f (glob "$w/*") {
+        next if $f =~ /\.EXE$/i;
+        my $s = slurp($f);
+        if ($s =~ s/\x1a\z// | $s =~ s/\r\n/\n/g) {
+            open my $h, '>:raw', $f;
+            print $h $s;
+            close $h;
+        }
+    }
+    open my $t, '>:raw', "$w/W.TCL";
+    print $t map { "$_\r\n" }
+        'set f [lindex $argv 0]',
+        'if [catch {source $f} m] {puts stdout "@@error $m"}',
+        'puts stdout "@@done"';
+    close $t;
+    open my $b, '>:raw', "$w/RUN.BAT";
+    print $b map { "$_\r\n" } '@echo off', "TCL W.TCL " . uc($file) . " >OUT.TXT";
+    close $b;
+    open my $c, '>', "$w/DOSBOX.CNF";
+    print $c <<~"END";
+      [sdl]
+      output=surface
+      [dosbox]
+      machine=cga
+      [cpu]
+      core=normal
+      cputype=8086
+      [autoexec]
+      mount c "$w"
+      c:
+      call RUN.BAT
+      exit
+      END
+    close $c;
+    my $pid = fork // die "fork: $!\n";
+    if (!$pid) {
+        $ENV{SDL_VIDEODRIVER} = 'dummy';
+        $ENV{SDL_AUDIODRIVER} = 'dummy';
+        open STDOUT, '>', "$w/dosbox.log" or die;
+        open STDERR, '>&', \*STDOUT or die;
+        exec 'timeout', '-s', 'KILL', $timeout, $dosbox, '-nogui', '-nomenu',
+            '-conf', "$w/DOSBOX.CNF" or die "exec: $!\n";
+    }
+    return $pid;
+}
+
+my @queue = @files;
+my $running = 0;
+while (@queue || $running) {
+    while (@queue && $running < $jobs) {
+        start(shift @queue);
+        $running++;
+    }
+    wait;
+    $running--;
+}
+
+# Results: FILE => [failed test names] or a status word.
+my (%failed, %status, @lines);
+for my $file (@files) {
+    (my $name = lc $file) =~ s/\.tst$//;
+    my $w = "$out/$name";
+    my ($o) = grep { uc(basename($_)) eq 'OUT.TXT' } glob "$w/*";
+    my $text = defined $o ? slurp($o) =~ s/\r//gr : '';
+    my @f = $text =~ /^---- (\S+) FAILED$/mg;
+    $failed{$name} = \@f;
+    my $log = slurp("$w/dosbox.log");
+    if ($log =~ /Write .* to rom/i) {
+        $status{$name} = 'rom-write';
+    } elsif ($text =~ /^\@\@error (.*)$/m) {
+        $status{$name} = "error: $1";
+    } elsif ($text !~ /^\@\@done$/m) {
+        $status{$name} = 'crashed';
+    }
+    push @lines, sprintf '%-10s %s', $name,
+        join ' ', grep { defined } $status{$name}, @f ? @f : (!$status{$name} ? 'ok' : ());
+}
+
+my ($ntests, $nfail) = (0, 0);
+$nfail += @{$failed{$_}} for keys %failed;
+my @bad = grep { $status{$_} } keys %status;
+push @lines, '', sprintf '%d files: %d failed tests, %d files did not finish',
+    scalar @files, $nfail, scalar @bad;
+
+my $exit = 0;
+if (defined $baseline) {
+    my %want;
+    for (split /\n/, slurp($baseline)) {
+        next if /^\s*(#|$)/;
+        my ($f, @t) = split ' ';
+        $want{$f}{$_} = 1 for @t;
+    }
+    my (@new, @fixed);
+    for my $name (sort keys %failed) {
+        my %got = map { $_ => 1 } @{$failed{$name}};
+        $got{stopped} = 1 if $status{$name};
+        push @new, map { "$name $_" } grep { !$want{$name}{$_} } sort keys %got;
+        push @fixed, map { "$name $_" } grep { !$got{$_} } sort keys %{$want{$name} // {}};
+    }
+    push @lines, '', 'Not in the baseline (a regression):', map { "  $_" } @new if @new;
+    push @lines, '', 'In the baseline but now passing:', map { "  $_" } @fixed if @fixed;
+    push @lines, '', @new ? 'FAIL' : 'PASS (every failure is in the baseline)';
+    $exit = @new ? 1 : 0;
+}
+
+open my $rep, '>', "$out/report.txt";
+say $rep $_ for @lines;
+close $rep;
+say for @lines;
+exit $exit;

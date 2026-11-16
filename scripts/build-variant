@@ -1,11 +1,18 @@
 #!/bin/sh
 #
-# Build one M1 measurement variant of TCL.EXE (docs/M1-REPORT.md, section
-# 7) in build/var/NAME, from the assembled sources in build/src, with
-# Open Watcom's runtime like build/dev; and build/var/FREEMEM.EXE
-# (tests/tools/freemem.c). Needs wcc and wlink on PATH (make variants).
+# Build one measurement variant of TCL.EXE (docs/M1-REPORT.md, section 7)
+# in VAR_OUT/NAME, from the assembled sources in VAR_SRC, with Open
+# Watcom's runtime like the development build; and VAR_OUT/FREEMEM.EXE
+# (tests/tools/freemem.c). Needs wcc and wlink on PATH (make variants,
+# make variants-tcl67).
 #
 # usage: scripts/build-variant NAME
+#
+# Environment, for the candidate (defaults: Tiny Tcl, M1):
+#   VAR_SRC     assembled sources (build/src)
+#   VAR_OUT     output directory (build/var)
+#   VAR_NAMES   the candidate's modules in VAR_SRC (Tiny Tcl's)
+#   VAR_DEFS    more wcc options for every module (none)
 #
 #   os      -os, 32 KB stack: build/dev/TCL.EXE again
 #   ox      -ox (speed), 32 KB stack
@@ -25,14 +32,17 @@ case $name in
   *) echo "build-variant: unknown variant $name" >&2; exit 1 ;;
 esac
 
-out=build/var/$name
+src=${VAR_SRC:-build/src}
+top=${VAR_OUT:-build/var}
+names=${VAR_NAMES:-tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
+  tclParse panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
+  tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir}
+out=$top/$name
 rm -rf "$out"
 mkdir -p "$out"
-flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL -Ibuild/src -I$WATCOM/h"
-for m in tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash tclParse \
-         panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
-         tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir; do
-  wcc $flags -fo="$out/$m.obj" "build/src/$m.c"
+flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL ${VAR_DEFS:-} -I$src -I$WATCOM/h"
+for m in $names; do
+  wcc $flags -fo="$out/$m.obj" "$src/$m.c"
 done
 for m in main stack probe; do
   wcc $flags -fo="$out/$m.obj" "src/$m.c"
@@ -44,9 +54,9 @@ done
 } > "$out/tcl.lnk"
 wlink @"$out/tcl.lnk"
 
-if [ ! -f build/var/FREEMEM.EXE ]; then
-  wcc -q -zq -ms -0 -bt=dos -I"$WATCOM/h" -fo=build/var/freemem.obj \
+if [ ! -f "$top/FREEMEM.EXE" ]; then
+  wcc -q -zq -ms -0 -bt=dos -I"$WATCOM/h" -fo="$top/freemem.obj" \
     tests/tools/freemem.c
-  wlink option quiet system dos name build/var/FREEMEM.EXE \
-    file build/var/freemem.obj
+  wlink option quiet system dos name "$top/FREEMEM.EXE" \
+    file "$top/freemem.obj"
 fi

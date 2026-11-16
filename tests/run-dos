@@ -35,12 +35,12 @@ standard output themselves, with C<catch>.
 
 Each case runs in its own DOSBox-X session, on an emulated 8086 (core
 normal, cputype 8086, CGA machine) with C: mounted on a work directory
-(F<build/run-dos>) holding TCL.EXE and the cases, and is killed if it
+(F<build/run-dos>, or WORK) holding TCL.EXE and the cases, and is killed if it
 takes longer than DOSBOX_TIMEOUT seconds. Exits 0 if every case not
 marked todo passes.
 
 Environment: DOSBOX (default dosbox-x), DOSBOX_TIMEOUT seconds per case
-(default 60), KEEP=1 to keep the work directory.
+(default 60), KEEP=1 to keep the work directory, WORK the work directory.
 
 Adapted from gr-dos/perl16's tests/run-dos.
 
@@ -52,7 +52,7 @@ die "$exe not found\n" unless -f $exe;
 my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 60;
 
-my $work = File::Spec->rel2abs('build/run-dos');
+my $work = File::Spec->rel2abs($ENV{WORK} // 'build/run-dos');
 remove_tree($work);
 make_path($work);
 copy($exe, "$work/TCL.EXE") or die "copy $exe: $!\n";

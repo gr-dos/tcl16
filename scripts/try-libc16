@@ -17,6 +17,7 @@
 # into libc16 (docs/DESIGN.md, section 4).
 #
 # usage: scripts/try-libc16 SRC LIBC16DIR OUT SOURCE...
+#        TRY_DEFS: more wcc options for every module (TCL16_TCL67 for M2)
 #        (make libc16-try; needs wcc, wlink and wlib on PATH)
 
 set -eu
@@ -32,22 +33,33 @@ out=$(cd "$out" && pwd)
 inc=$(cd "$libc16/include" && pwd)
 lib=$(cd "$libc16/lib" && pwd)/LIBC16L.LIB
 
-flags="-q -zq -zl -zld -x -ml -0 -zc -s -bt=dos"
+flags="-q -zq -zl -zld -x -ml -0 -zc -s -bt=dos ${TRY_DEFS:-}"
 
 cat > "$out/shim/signal.h" <<'EOF'
 /* try-libc16 shim: Tiny Tcl includes <signal.h> but uses nothing in it. */
 EOF
 cat > "$out/shim/dirent.h" <<'EOF'
-/* try-libc16 shim: declarations only (tclGlob, readdir). */
+/* try-libc16 shim: declarations only (tclGlob, readdir). Also included
+ * first, because the Tcl 6.7 DOS port takes them from Open Watcom's
+ * <direct.h>, and libc16's has none. */
+#ifndef TRY_LIBC16_DIRENT
+#define TRY_LIBC16_DIRENT
 typedef struct DIR DIR;
 struct dirent { char d_name[13]; };
 DIR * __cdecl opendir(const char *path);
 struct dirent * __cdecl readdir(DIR *dir);
 int __cdecl closedir(DIR *dir);
+#endif
+EOF
+cat > "$out/shim/malloc.h" <<'EOF'
+/* try-libc16 shim: the Tcl 6.7 DOS port includes <malloc.h> (for
+ * Borland's <alloc.h>); libc16 declares malloc in <stdlib.h>. */
 EOF
 cat > "$out/shim/environ.h" <<'EOF'
-/* try-libc16 shim, included first: the environ array (tclEnv). */
+/* try-libc16 shim, included first: the environ array (tclEnv), and the
+ * directory declarations (wcc takes only one -fi). */
 extern char ** __cdecl environ;
+#include "dirent.h"
 EOF
 
 r=$out/report.txt

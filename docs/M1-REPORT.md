@@ -6,6 +6,27 @@ follows the evaluation process of section 2.1 for the first candidate.
 M2 does the same for the historical Tcl 6.7 DOS port, and M3 chooses
 between them. This report does not choose.
 
+> **Added in M2.** Evaluating the Tcl 6.7 DOS port, which shares this
+> core, found more about Tiny Tcl ([M2-REPORT.md](M2-REPORT.md)):
+>
+> - **`scan`** stored integer fields in a 16-bit `int`, so
+>   `scan 12345670 %o a` gave -13384. Tcl 6.7's own test suite found it.
+>   `patches/0006-scan-long.patch` fixes it, and `tests/lang/ints` checks
+>   it.
+> - **DOS text scripts.** `source` reads scripts in binary mode. In a
+>   script with DOS line ends (CRLF), a `\` continuation fails and a
+>   string spanning lines keeps its CR, and a trailing ^Z runs as a
+>   command. M1's tests are LF files, so they did not show this.
+>   `tests/tinytcl/crlf` is a todo, and `tests/tinytcl/ctrlz` records
+>   the ^Z behaviour.
+> - **Candidate-specific tests** moved from `tests/lang` and `tests/dos`
+>   to `tests/tinytcl` (`loop`, `readdir`, the 32 KB `source`, upper-case
+>   `glob`, `pwd`'s `C:\`). The shared tests now pass on both
+>   candidates. `make test` runs all three directories: 25 passed and 2
+>   todo.
+> - **Tcl 6.7's own suite** (`make test-suite`) passes 35 of 42 files.
+>   The other 7 need `exec` for their fixtures.
+
 ## 1. Summary
 
 - **Source.** Tiny Tcl 6.8.1 (September 2001), the last release, is
