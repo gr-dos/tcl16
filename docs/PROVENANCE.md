@@ -128,9 +128,11 @@ tcl16 does not redistribute this archive:
 
 So `make` fetches the archive, checks it and builds it in `build/`,
 and the repository holds only tcl16's patches. The patches carry some
-context lines from `msdos.c` and `msdos.h`, as any patch must. If the
-port were chosen (M3), its own files would need the author's
-permission, or a replacement written for tcl16.
+context lines from `msdos.c` and `msdos.h`, as any patch must. Had the
+port been chosen, its own files would have needed the author's
+permission, or a replacement written for tcl16. M3 chose Tiny Tcl
+instead (ADR-001-tcl-implementation.md). The port stays fetched as
+reference material, and its archive supplies Tcl 6.7's test suite.
 
 ### Normalisation and names
 

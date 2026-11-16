@@ -6,6 +6,11 @@ follows the evaluation process of section 2.1 for the first candidate.
 M2 does the same for the historical Tcl 6.7 DOS port, and M3 chooses
 between them. This report does not choose.
 
+> **Decided in M3.** Tcl16 is built on Tiny Tcl 6.8.1:
+> [ADR-001-tcl-implementation.md](ADR-001-tcl-implementation.md) records
+> the decision and its reasons. The rest of this report is unchanged,
+> as the evidence for it.
+
 > **Added in M2.** Evaluating the Tcl 6.7 DOS port, which shares this
 > core, found more about Tiny Tcl ([M2-REPORT.md](M2-REPORT.md)):
 >
