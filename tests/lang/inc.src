@@ -1,0 +1,3 @@
+# Sourced by evalsrc.tcl (a fixture, not a case).
+proc incproc {n} {return [expr {$n + 100}]}
+set incvar "set by INC"

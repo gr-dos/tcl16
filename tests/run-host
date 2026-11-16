@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+
+use 5.036;
+use warnings;
+use autodie qw(open close);
+use File::Basename qw(basename);
+use File::Copy qw(copy);
+use File::Path qw(make_path remove_tree);
+use File::Spec;
+
+=head1 NAME
+
+run-host - run the Tcl test scripts with Tiny Tcl built for the host
+
+=head1 SYNOPSIS
+
+  tests/run-host TCLHOST DIR...
+
+=head1 DESCRIPTION
+
+Runs the cases of F<tests/run-dos> (same files, same header comments)
+with TCLHOST, the gcc -m32 build of the same sources (C<make host>), in
+F<build/run-host>, with the fixtures under their upper-case names as in
+DOS. A case whose header says C<# host: skip> (one about 16-bit int or
+DOS itself) is not run. A C<# command:> line is split on blanks, with no
+DOS quoting. Exits 0 if every case not marked todo passes.
+
+The host build has a 32-bit int, so it separates what is a 16-bit
+problem from what is Tiny Tcl's own behaviour (docs/M1-REPORT.md).
+
+=cut
+
+my ($exe, @dirs) = @ARGV;
+die "usage: $0 TCLHOST DIR...\n" unless @dirs;
+$exe = File::Spec->rel2abs($exe);
+die "$exe not found\n" unless -x $exe;
+
+my $work = File::Spec->rel2abs('build/run-host');
+remove_tree($work);
+make_path($work);
+
+sub slurp ($f) { open my $h, '<:raw', $f; local $/; my $s = <$h>; close $h; $s }
+
+my @cases;
+for my $dir (@dirs) {
+    for my $t (sort glob "$dir/*.tcl") {
+        my $name = uc basename($t, '.tcl');
+        my %case = (name => $name, status => 0, args => ["$name.TCL"]);
+        for (split /\n/, slurp($t)) {
+            last unless /^#/;
+            $case{status} = $1 if /^#\s*status:\s*(\d+)/;
+            $case{args}   = [split ' ', $1] if /^#\s*command:\s*(.+?)\s*$/;
+            $case{todo}   = $1 if /^#\s*todo:\s*(.+?)\s*$/;
+            $case{skip}   = 1 if /^#\s*host:\s*skip/;
+        }
+        (my $exp = $t) =~ s/\.tcl$/.out/;
+        $case{expect} = slurp($exp);
+        copy($t, "$work/$name.TCL") or die "copy $t: $!\n";
+        push @cases, \%case;
+    }
+    for my $f (grep { -f && !/\.(tcl|out)$/ } glob "$dir/*") {
+        copy($f, "$work/" . uc basename($f)) or die "copy $f: $!\n";
+    }
+}
+die "no cases\n" unless @cases;
+
+my ($pass, $fail, $todo, $skip) = (0, 0, 0, 0);
+for my $c (@cases) {
+    my $n = $c->{name};
+    if ($c->{skip}) {
+        $skip++;
+        say "skip  $n";
+        next;
+    }
+    my $pid = open my $h, '-|';
+    if (!$pid) {
+        chdir $work or die "chdir $work: $!\n";
+        open STDERR, '>', "$n.ERR" or die "$n.ERR: $!\n";
+        exec $exe, @{ $c->{args} } or die "exec $exe: $!\n";
+    }
+    my $got = do { local $/; <$h> } // '';
+    close $h if 0;
+    waitpid($pid, 0);
+    my $st = $? >> 8;
+    my @why;
+    push @why, "exit status $st, not $c->{status}" if $st != $c->{status};
+    if ($got ne $c->{expect}) {
+        push @why, 'output differs';
+        open my $g, '>:raw', "$work/$n.GOT";
+        print $g $got;
+        close $g;
+    }
+    if (!@why) {
+        $pass++;
+        say "ok    $n";
+    } elsif ($c->{todo}) {
+        $todo++;
+        say "todo  $n: ", join('; ', @why), " ($c->{todo})";
+    } else {
+        $fail++;
+        say "FAIL  $n: ", join('; ', @why);
+    }
+}
+say "$pass passed, $fail failed, $todo todo, $skip skipped (work directory $work)";
+exit($fail ? 1 : 0);

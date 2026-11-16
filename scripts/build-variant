@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+# Build one M1 measurement variant of TCL.EXE (docs/M1-REPORT.md, section
+# 7) in build/var/NAME, from the assembled sources in build/src, with
+# Open Watcom's runtime like build/dev; and build/var/FREEMEM.EXE
+# (tests/tools/freemem.c). Needs wcc and wlink on PATH (make variants).
+#
+# usage: scripts/build-variant NAME
+#
+#   os      -os, 32 KB stack: build/dev/TCL.EXE again
+#   ox      -ox (speed), 32 KB stack
+#   od      -od (no optimisation), 32 KB stack
+#   stk16   -os, 16 KB stack
+#   stk48   -os, 48 KB stack
+
+set -eu
+
+name=$1
+case $name in
+  os)    opt=-os; stack=32k ;;
+  ox)    opt=-ox; stack=32k ;;
+  od)    opt=-od; stack=32k ;;
+  stk16) opt=-os; stack=16k ;;
+  stk48) opt=-os; stack=48k ;;
+  *) echo "build-variant: unknown variant $name" >&2; exit 1 ;;
+esac
+
+out=build/var/$name
+rm -rf "$out"
+mkdir -p "$out"
+flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL -Ibuild/src -I$WATCOM/h"
+for m in tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash tclParse \
+         panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
+         tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir; do
+  wcc $flags -fo="$out/$m.obj" "build/src/$m.c"
+done
+for m in main stack probe; do
+  wcc $flags -fo="$out/$m.obj" "src/$m.c"
+done
+{
+  echo "option quiet, stack=$stack, map=$out/tcl.map"
+  echo "system dos name $out/TCL.EXE"
+  for o in "$out"/*.obj; do echo "file $o"; done
+} > "$out/tcl.lnk"
+wlink @"$out/tcl.lnk"
+
+if [ ! -f build/var/FREEMEM.EXE ]; then
+  wcc -q -zq -ms -0 -bt=dos -I"$WATCOM/h" -fo=build/var/freemem.obj \
+    tests/tools/freemem.c
+  wlink option quiet system dos name build/var/FREEMEM.EXE \
+    file build/var/freemem.obj
+fi

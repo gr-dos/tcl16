@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# Build Tiny Tcl for the host, with gcc -m32 (32-bit int and pointers), as
+# a reference for the tests (docs/M1-REPORT.md, section 8): the same
+# assembled sources as build/dev/TCL.EXE, with tcl16's src/main.c and
+# src/stack.c (no guard: the host stack is large) and no m1probe.
+#
+# usage: scripts/build-host SRC OUT     (make host: build/src build/host)
+#
+# The sources are DOS ones, so the host copy is adjusted here and only
+# here, never in patches/:
+#
+# - hinc/ supplies <dos.h> (declaring environ), <io.h> and <direct.h>,
+#   which glibc does not have;
+# - tcldos.h's readlink declaration, which differs from glibc's, is
+#   dropped (S_IFLNK is undefined, so nothing calls it);
+# - tclEnv.c's putenv, which replaces the C library's on DOS, is renamed
+#   so that glibc's stays in use;
+# - tclXdbg.c's static functions, declared extern by tclExtdInt.h first
+#   (Open Watcom only warns), lose "static".
+
+set -eu
+
+src=$1
+out=$2
+top=$(cd "$(dirname "$0")/.." && pwd)
+
+rm -rf "$out"
+mkdir -p "$out/hinc" "$out/c"
+cp "$src"/*.c "$src"/*.h "$top/src/main.c" "$top/src/stack.c" "$out/c/"
+printf 'extern char **environ;\n' > "$out/hinc/dos.h"
+printf '#include <unistd.h>\n' > "$out/hinc/io.h"
+printf '#include <unistd.h>\n' > "$out/hinc/direct.h"
+sed -i '/^extern int\treadlink/d' "$out/c/tcldos.h"
+sed -i 's/^putenv(string)$/tcl16_host_putenv(string)/' "$out/c/tclEnv.c"
+sed -i 's/^static void$/void/; s/^static int$/int/' "$out/c/tclXdbg.c"
+
+cd "$out/c"
+for m in tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash tclParse \
+         panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
+         tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir main \
+         stack; do
+  gcc -m32 -std=gnu89 -w -O1 -g -I../hinc -DO_BINARY=0 -c "$m.c" -o "$m.o"
+done
+gcc -m32 -o ../tclhost *.o -lm

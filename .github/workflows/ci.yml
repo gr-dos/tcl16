@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # make fetches the pinned libc16 release (scripts/fetch-libc16) and
+      # the Open Watcom snapshot it names; the snapshot is cached per pin.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/tools
+          key: libc16-tools-ubuntu-24.04-${{ hashFiles('scripts/fetch-libc16') }}
+
+      - name: Install DOSBox-X, patch and gcc-multilib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dosbox-x patch gcc-multilib
+
+      - name: Check the vendored Tiny Tcl source
+        run: make check-vendor
+
+      # build/dev/TCL.EXE links Open Watcom's runtime: an evaluation
+      # binary (docs/M1-REPORT.md), so it is not uploaded.
+      - name: Build
+        run: make
+
+      - name: Test (DOSBox-X, 8086)
+        run: make test
+
+      - name: Test (host reference build)
+        run: make test-host
+
+      - name: libc16 build experiment
+        run: |
+          make libc16-try

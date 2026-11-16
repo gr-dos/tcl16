@@ -1,0 +1,204 @@
+#!/usr/bin/env perl
+
+use 5.036;
+use warnings;
+use autodie qw(open close);
+use File::Basename qw(basename);
+use File::Copy qw(copy);
+use File::Path qw(make_path remove_tree);
+use File::Spec;
+
+=head1 NAME
+
+measure - the M1 size, memory, stack and speed figures of TCL.EXE variants
+
+=head1 SYNOPSIS
+
+  scripts/measure VARDIR NAME[+nofpu]...   (make measure: build/var and
+                                            the variants of make variants)
+
+=head1 DESCRIPTION
+
+For each variant VARDIR/NAME/TCL.EXE (with its F<tcl.map>):
+
+=over
+
+=item sizes
+
+the F<.EXE> size; from the map, the load image ("Memory size"), the code
+of Tiny Tcl and tcl16 (the modules' C<_TEXT> segments), the code of Open
+Watcom's runtime (the C<_TEXT> segment: C library, C<printf>, 8087
+emulator) and DGROUP without and with the stack;
+
+=item memory
+
+run under DOSBox-X: F<FREEMEM.EXE> (VARDIR) for the conventional memory
+free before Tcl starts, then F<tests/probe/start.tcl> and
+F<tests/probe/work.tcl> with C<m1probe dosfree>, giving what Tcl takes
+at start and after each workload;
+
+=item stack
+
+F<tests/probe/depth.tcl>: the deepest recursion before the stack guard
+stops it, and the stack one level of a simple proc uses;
+
+=item speed
+
+F<tests/probe/bench.tcl>, in BIOS ticks (18.2 a second).
+
+=back
+
+Each variant runs in one DOSBox-X session (core normal, cputype 8086,
+CGA machine) with the CPU fixed at CYCLES cycles per millisecond
+(default 315, about a 4.77 MHz 8088, as in gr-dos/perl16's scripts/bench).
+DOSBox-X emulates an 8087 even for cputype 8086, and Open Watcom's
+emulator then uses it; NAME+nofpu runs VARDIR/NAME with C<fpu=false>, so
+floating point goes through the software emulator, as on an 8088 with no
+8087. These are emulator figures, not measurements of real hardware; the
+ticks are only good for comparing variants and candidates.
+
+Writes F<build/measure/report.txt> and prints it. Environment: DOSBOX
+(default dosbox-x), CYCLES, DOSBOX_TIMEOUT (default 1200 seconds per
+variant).
+
+=cut
+
+my ($vardir, @names) = @ARGV;
+die "usage: $0 VARDIR NAME...\n" unless @names;
+my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
+my $cycles = $ENV{CYCLES} // 315;
+my $timeout = $ENV{DOSBOX_TIMEOUT} // 1200;
+my $top = File::Spec->rel2abs(File::Spec->catdir((File::Spec->splitpath($0))[1], '..'));
+my $out = File::Spec->rel2abs('build/measure');
+remove_tree($out);
+make_path($out);
+
+sub slurp ($f) { open my $h, '<:raw', $f; local $/; my $s = <$h>; close $h; $s }
+
+my @probes = qw(start work depth bench);
+
+# Start every variant's session, then wait for them all.
+my %pid;
+sub variant ($n) { $n =~ s/\+nofpu$//r }
+for my $n (@names) {
+    my $w = "$out/$n";
+    my $fpu = $n =~ /\+nofpu$/ ? 'false' : 'true';
+    make_path($w);
+    copy("$vardir/" . variant($n) . "/TCL.EXE", "$w/TCL.EXE") or die "copy $n: $!\n";
+    copy("$vardir/FREEMEM.EXE", "$w/FREEMEM.EXE") or die "copy FREEMEM: $!\n";
+    copy("$top/tests/probe/$_.tcl", "$w/" . uc($_) . '.TCL') or die "copy $_: $!\n"
+        for @probes;
+    open my $b, '>:raw', "$w/RUN.BAT";
+    print $b map { "$_\r\n" } '@echo off', 'FREEMEM >FREE.OUT',
+        map({ 'TCL ' . uc($_) . '.TCL >' . uc($_) . '.OUT' } @probes);
+    close $b;
+    open my $c, '>', "$w/DOSBOX.CNF";
+    print $c <<~"END";
+      [sdl]
+      output=surface
+      [dosbox]
+      machine=cga
+      [cpu]
+      core=normal
+      cputype=8086
+      cycles=fixed $cycles
+      fpu=$fpu
+      [autoexec]
+      mount c "$w"
+      c:
+      call RUN.BAT
+      exit
+      END
+    close $c;
+    my $pid = fork // die "fork: $!\n";
+    if (!$pid) {
+        $ENV{SDL_VIDEODRIVER} = 'dummy';
+        $ENV{SDL_AUDIODRIVER} = 'dummy';
+        open STDOUT, '>', "$w/dosbox.log" or die;
+        open STDERR, '>&', \*STDOUT or die;
+        exec 'timeout', '-s', 'KILL', $timeout, $dosbox, '-nogui', '-nomenu',
+            '-conf', "$w/DOSBOX.CNF" or die "exec: $!\n";
+    }
+    $pid{$pid} = $n;
+}
+1 while wait != -1;
+
+# Results: NAME => { key => value }, from "key value" lines.
+my %r;
+for my $n (@names) {
+    my %dosfile = map { uc(basename($_)) => $_ } glob "$out/$n/*";
+    for my $p ('free', @probes) {
+        my $f = $dosfile{uc($p) . '.OUT'} or next;
+        for (split /\r?\n/, slurp($f)) {
+            $r{$n}{"$p.$1"} = $2 if /^(\S+) (.*)$/;
+        }
+    }
+    my $map = slurp("$vardir/" . variant($n) . "/tcl.map");
+    my ($tcl, $rt, $dg, $stack) = (0, 0, 0, 0);
+    while ($map =~ /^(\S+)\s+(\S+)\s+(\S+)\s+[0-9a-f]{4}:[0-9a-f]{4}\s+([0-9a-f]{8})$/mg) {
+        my ($seg, $class, $group, $size) = ($1, $2, $3, hex $4);
+        if ($class eq 'CODE') {
+            if ($seg eq '_TEXT') { $rt += $size } else { $tcl += $size }
+        }
+        if ($group eq 'DGROUP') {
+            if ($class eq 'STACK') { $stack += $size } else { $dg += $size }
+        }
+    }
+    my ($image) = $map =~ /^Memory size:\s+[0-9a-f]+ \((\d+)\.\)/m;
+    $r{$n}{size} = -s "$vardir/" . variant($n) . "/TCL.EXE";
+    $r{$n}{image} = $image;
+    $r{$n}{tclcode} = $tcl;
+    $r{$n}{rtcode} = $rt;
+    $r{$n}{dgroup} = $dg;
+    $r{$n}{stack} = $stack;
+}
+
+sub kb ($b) { defined $b && $b ne '' ? sprintf('%.1f', $b / 1024) : '?' }
+sub v ($n, $k) { $r{$n}{$k} // '?' }
+sub used ($n, $k) {
+    my ($free, $now) = ($r{$n}{'free.freemem'}, $r{$n}{$k});
+    return '?' unless defined $free && defined $now;
+    kb($free - $now);
+}
+
+my @lines;
+my $row = sub (@cells) {
+    push @lines, sprintf('  %-26s' . (' %9s' x @names), @cells);
+};
+push @lines, "M1 measurements: DOSBox-X, cputype 8086, fixed $cycles cycles/ms";
+push @lines, '';
+push @lines, 'Sizes (KB)';
+$row->('', @names);
+$row->('TCL.EXE', map { kb(v($_, 'size')) } @names);
+$row->('load image', map { kb(v($_, 'image')) } @names);
+$row->('code: Tiny Tcl + tcl16', map { kb(v($_, 'tclcode')) } @names);
+$row->('code: Open Watcom runtime', map { kb(v($_, 'rtcode')) } @names);
+$row->('DGROUP data', map { kb(v($_, 'dgroup')) } @names);
+$row->('stack', map { kb(v($_, 'stack')) } @names);
+push @lines, '';
+push @lines, 'Conventional memory (KB): free before Tcl, then taken by Tcl';
+$row->('', @names);
+$row->('free before (FREEMEM)', map { kb(v($_, 'free.freemem')) } @names);
+$row->('at start', map { used($_, 'start.dosfree') } @names);
+for my $k (qw(procs list3000 array1000 string30000 copy30000 freed)) {
+    $row->("after $k", map { used($_, "work.$k") } @names);
+}
+push @lines, '';
+push @lines, 'Stack';
+$row->('', @names);
+$row->('free at start (bytes)', map { v($_, 'start.stack') } @names);
+$row->('plain recursion depth', map { v($_, 'depth.plain') } @names);
+$row->('recursion inside expr', map { v($_, 'depth.inexpr') } @names);
+$row->('bytes per simple level', map { v($_, 'depth.perlevel') } @names);
+push @lines, '';
+push @lines, 'Speed (BIOS ticks, 1 tick = 55 ms)';
+$row->('', @names);
+for my $k (qw(loop1000 expr1000 fexpr1000 call500 fib15 lappend2000 lsort500
+              string500 regexp200 format500)) {
+    $row->($k, map { v($_, "bench.$k") } @names);
+}
+
+open my $rep, '>', "$out/report.txt";
+say $rep $_ for @lines;
+close $rep;
+say for @lines;

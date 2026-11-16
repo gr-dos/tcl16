@@ -1,0 +1,137 @@
+#!/bin/sh
+#
+# The M1 libc16 build experiment (docs/M1-REPORT.md, section 6): compile
+# Tiny Tcl and tcl16's driver against libc16's headers only, in the large
+# model, as libc16's consumers do (docs/ABI.md, "Consumer build"), and link
+# them with LIBC16L.LIB alone. Writes OUT/report.txt:
+#
+# 1. each module compiled with libc16's headers as they are: the headers
+#    it cannot find and its error count;
+# 2. compiled again with OUT/shim, which declares (and only declares) what
+#    pass 1 found missing, so that every module compiles: the functions
+#    called with no prototype in libc16's headers;
+# 3. the pass 2 objects linked with LIBC16L.LIB (undefsok): every symbol
+#    left undefined, and whether libc16 defines it under its __cdecl name.
+#
+# The shims are part of the experiment, not a proposal: nothing here goes
+# into libc16 (docs/DESIGN.md, section 4).
+#
+# usage: scripts/try-libc16 SRC LIBC16DIR OUT SOURCE...
+#        (make libc16-try; needs wcc, wlink and wlib on PATH)
+
+set -eu
+
+src=$1
+libc16=$2
+out=$3
+shift 3
+
+rm -rf "$out"
+mkdir -p "$out/p1" "$out/p2" "$out/shim"
+out=$(cd "$out" && pwd)
+inc=$(cd "$libc16/include" && pwd)
+lib=$(cd "$libc16/lib" && pwd)/LIBC16L.LIB
+
+flags="-q -zq -zl -zld -x -ml -0 -zc -s -bt=dos"
+
+cat > "$out/shim/signal.h" <<'EOF'
+/* try-libc16 shim: Tiny Tcl includes <signal.h> but uses nothing in it. */
+EOF
+cat > "$out/shim/dirent.h" <<'EOF'
+/* try-libc16 shim: declarations only (tclGlob, readdir). */
+typedef struct DIR DIR;
+struct dirent { char d_name[13]; };
+DIR * __cdecl opendir(const char *path);
+struct dirent * __cdecl readdir(DIR *dir);
+int __cdecl closedir(DIR *dir);
+EOF
+cat > "$out/shim/environ.h" <<'EOF'
+/* try-libc16 shim, included first: the environ array (tclEnv). */
+extern char ** __cdecl environ;
+EOF
+
+r=$out/report.txt
+{
+  echo "libc16 build experiment: $(cat "$libc16/VERSION" 2>/dev/null || echo '?')"
+  echo "wcc $flags -I<libc16>/include"
+  echo
+  echo "1. Compiled with libc16's headers as they are"
+  echo
+} > "$r"
+
+for f in "$@"; do
+  m=$(basename "$f" .c)
+  wcc $flags -I"$src" -I"$inc" -fo="$out/p1/$m.obj" "$f" \
+    > "$out/p1/$m.log" 2>&1 || true
+  e=$(grep -c 'Error!' "$out/p1/$m.log" || true)
+  h=$(sed -n "s/.*Unable to open '\(.*\)'.*/<\1>/p" "$out/p1/$m.log" \
+      | sort -u | tr '\n' ' ')
+  if [ "$e" -eq 0 ]; then s=ok; else s="$e errors; missing: ${h:-none}"; fi
+  printf '  %-10s %s\n' "$m" "$s" >> "$r"
+done
+
+{
+  echo
+  echo "2. Compiled with the shims (shim/): calls with no prototype"
+  echo
+} >> "$r"
+
+for f in "$@"; do
+  m=$(basename "$f" .c)
+  wcc $flags -I"$out/shim" -I"$src" -I"$inc" -fi="$out/shim/environ.h" \
+    -fo="$out/p2/$m.obj" "$f" > "$out/p2/$m.log" 2>&1 || {
+      echo "  $m: does not compile even with the shims" >> "$r"; continue; }
+done
+grep -h 'W131' "$out"/p2/*.log \
+  | sed -n "s/.*function '\(.*\)'.*/\1/p" | sort | uniq -c \
+  | awk '{ printf "  %-10s %d call site(s)\n", $2, $1 }' >> "$r"
+
+{
+  echo
+  echo "3. Linked with LIBC16L.LIB: undefined symbols"
+  echo
+  echo "  symbol     kind      libc16  used by"
+} >> "$r"
+
+{
+  echo "option quiet, nodefaultlibs, undefsok, stack=32k, map=$out/l16.map"
+  echo "format dos name $out/l16.exe"
+  for o in "$out"/p2/*.obj; do echo "file $o"; done
+  echo "library $lib"
+} > "$out/l16.lnk"
+wlink @"$out/l16.lnk" > "$out/link.log" 2>&1 || true
+rm -f "$out/l16.exe"
+
+cp "$lib" "$out/libc16l.lib"
+wlib -q -l="$out/libc16l.lst" "$out/libc16l.lib"
+rm -f "$out/libc16l.lib"
+sed -n 's/^\([^ ]*\)\.\.\..*/\1/p' "$out/libc16l.lst" | sort -u > "$out/libc16l.syms"
+
+sed -n 's/^file \([^(]*\)(.*undefined symbol \(.*\)$/\2 \1/p' "$out/link.log" \
+  | sed 's|[^ ]*/||; s|\.obj$||' | sort -u \
+  | awk -v syms="$out/libc16l.syms" '
+      BEGIN { while ((getline s < syms) > 0) have[s] = 1 }
+      { users[$1] = users[$1] " " $2 }
+      END {
+        for (sym in users) {
+          kind = "function"; c = sym
+          if (sym ~ /^F[A-Z][A-Z]RQQ$/) { kind = "x87"; c = sym }
+          else if (sym == "__STK" || sym == "__CHP" || sym ~ /^__[IU]4[DM]$/) kind = "helper"
+          else if (sym ~ /_$/) { c = substr(sym, 1, length(sym) - 1) }
+          else if (sym ~ /^_/) { kind = "cdecl"; c = substr(sym, 2) }
+          in16 = (("_" c) in have || (kind == "helper" && (sym in have))) ? "yes" : "no"
+          if (kind == "x87") in16 = "n/a"
+          printf "  %-10s %-9s %-7s%s\n", c, kind, in16, users[sym]
+        }
+      }' | sort -b -k2,2 -k1,1 >> "$r"
+
+{
+  echo
+  echo "kinds: function, called with no prototype (Open Watcom's register"
+  echo "convention, name_); cdecl, a __cdecl function or variable (_name)"
+  echo "declared by a libc16 header or a shim; helper, a code generation"
+  echo "helper; x87, an 8087 fixup (floating point compiled with -fpi,"
+  echo "needing an FPU or an emulator)."
+} >> "$r"
+
+cat "$r"

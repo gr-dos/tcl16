@@ -1,0 +1,15 @@
+a is 5
+a is $a
+brackets: 6
+brackets: [expr $a + 1]
+nested "quotes" and \backslash
+tab:	end
+octal AB; Tcl 6 has no hex escape: \x43
+dollar $a and brace {
+indirect: 5
+array elem: one
+a {b c} {d e} {} \{
+multiline
+nested {braces {deep}} ok
+xyz
+1

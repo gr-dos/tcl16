@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# Check vendor/tinytcl-6.8.1, the pinned Tiny Tcl source, against
+# vendor/tinytcl-6.8.1.sha256. With --zip, also download the upstream
+# release, check its SHA-256 below and compare every file it holds with
+# the vendored copy byte for byte (docs/PROVENANCE.md).
+#
+# usage: scripts/check-vendor [--zip]
+#
+# TINYTCL_URL, if set, is fetched instead of the SourceForge release (a
+# mirror, or a local copy as a file:// URL); it must have the same SHA-256.
+
+set -eu
+
+sha256=6a4d24de076a84285218cd398ab97a275650b127dcc00a3bf9ae06d92ca1c0f4
+url=${TINYTCL_URL:-https://sourceforge.net/projects/tinytcl/files/tinytcl/TinyTcl%206.8.1/tinytcl681.zip/download}
+
+top=$(cd "$(dirname "$0")/.." && pwd)
+vendor=$top/vendor/tinytcl-6.8.1
+
+(cd "$vendor" && sha256sum -c --quiet "$top/vendor/tinytcl-6.8.1.sha256")
+n=$(find "$vendor" -type f | wc -l)
+[ "$n" -eq "$(wc -l < "$top/vendor/tinytcl-6.8.1.sha256")" ] || {
+  echo "$vendor: files not in the manifest" >&2; exit 1; }
+echo "vendor/tinytcl-6.8.1: $n files match the manifest"
+
+if [ "${1:-}" = --zip ]; then
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  curl -fsSL -o "$tmp/tinytcl681.zip" "$url"
+  echo "$sha256  $tmp/tinytcl681.zip" | sha256sum -c --quiet
+  mkdir "$tmp/x"
+  unzip -q "$tmp/tinytcl681.zip" -d "$tmp/x"
+  diff -r "$tmp/x/tinytcl" "$vendor"
+  echo "vendor/tinytcl-6.8.1: identical to tinytcl681.zip ($sha256)"
+fi

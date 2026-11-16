@@ -1,0 +1,226 @@
+Build Tiny Tcl 6.8.1 with Open Watcom C for 16-bit DOS (docs/M1-REPORT.md,
+section 4). Upstream builds with Borland C 5.0.
+
+- Include "tcldos.h" by its real name: upstream writes "tclDos.h", which a
+  case-sensitive host filesystem does not find.
+- Do not include Borland's <values.h>; tclExtdInt.h has fallbacks for the
+  MAXINT family.
+- Take errno, sys_nerr and environ from the C library's headers rather than
+  redeclaring them with different modifiers; drop tclEnv.c's
+  "#define environ _environ".
+- Rename tclEnv.c's private setenv/unsetenv, which manipulate environ for
+  the env array, to static TclSetEnv/TclUnsetEnv, so that they do not
+  collide with the C library's; the one three-argument call loses its
+  stray third argument.
+- TclX_InitGeneral is void: do not return TCL_OK from it.
+- DOS has no symbolic links: undefine S_IFLNK and S_ISLNK, which Open
+  Watcom's <sys/stat.h> defines, so that lstat is stat and there is no
+  "file readlink".
+- Include <io.h> and <direct.h> for read() and getcwd(): unprototyped,
+  getcwd() is taken to return int, which loses the segment of a far
+  pointer.
+
+diff -ru a/readdir.c b/readdir.c
+--- a/readdir.c
++++ b/readdir.c
+@@ -17,7 +17,7 @@
+  */
+ 
+ #include "tclExtdInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+ 
+ /*
+diff -ru a/tclEnv.c b/tclEnv.c
+--- a/tclEnv.c
++++ b/tclEnv.c
+@@ -17,9 +17,8 @@
+  */
+ 
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+-#define environ _environ
+ 
+ 
+ /*
+@@ -58,11 +57,9 @@
+ 			    int flags));
+ static int		FindVariable _ANSI_ARGS_((CONST char *name,
+ 			    int *lengthPtr));
+-/*
+-void			setenv _ANSI_ARGS_((CONST char *name,
++static void		TclSetEnv _ANSI_ARGS_((CONST char *name,
+ 			    CONST char *value));
+-*/
+-void			unsetenv _ANSI_ARGS_((CONST char *name));
++static void		TclUnsetEnv _ANSI_ARGS_((CONST char *name));
+ 
+ /*
+  *----------------------------------------------------------------------
+@@ -202,8 +199,8 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-void
+-setenv(name, value)
++static void
++TclSetEnv(name, value)
+     CONST char *name;		/* Name of variable whose value is to be
+ 				 * set. */
+     CONST char *value;		/* New value for variable. */
+@@ -325,7 +322,7 @@
+     name = ckalloc(nameLength+1);
+     memcpy(name, string, nameLength);
+     name[nameLength] = 0;
+-    setenv(name, value+1);
++    TclSetEnv(name, value+1);
+     ckfree(name);
+     return 0;
+ }
+@@ -347,8 +344,8 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-void
+-unsetenv(name)
++static void
++TclUnsetEnv(name)
+     CONST char *name;			/* Name of variable to remove. */
+ {
+     int index, dummy;
+@@ -454,11 +451,11 @@
+      */
+ 
+     if (flags & TCL_TRACE_WRITES) {
+-	setenv(name2, Tcl_GetVar2(interp, "env", name2, TCL_GLOBAL_ONLY), 1);
++	TclSetEnv(name2, Tcl_GetVar2(interp, "env", name2, TCL_GLOBAL_ONLY));
+     }
+ 
+     if (flags & TCL_TRACE_UNSETS) {
+-	unsetenv(name2);
++	TclUnsetEnv(name2);
+     }
+     return NULL;
+ }
+diff -ru a/tclExtdInt.h b/tclExtdInt.h
+--- a/tclExtdInt.h
++++ b/tclExtdInt.h
+@@ -21,7 +21,7 @@
+ 
+ #include "tclExtend.h"
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ /* #include <sys/param.h> */
+ 
+ 
+@@ -66,7 +66,7 @@
+ #    include <sys/times.h>
+ #endif 
+ 
+-#include <values.h>
++/* #include <values.h> */
+ /* #include <grp.h> */
+ /*
+  * On some systems this is not included by tclUnix.h.
+diff -ru a/tclXgen.c b/tclXgen.c
+--- a/tclXgen.c
++++ b/tclXgen.c
+@@ -165,8 +165,6 @@
+ 
+     Tcl_CreateCommand (interp, "loop", Tcl_LoopCmd, 
+                        (ClientData)NULL, NULL);
+-
+-    return TCL_OK;
+ }
+ 
+ 
+diff -ru a/tcldos.h b/tcldos.h
+--- a/tcldos.h
++++ b/tcldos.h
+@@ -68,6 +68,15 @@
+ #include <sys/types.h>
+ #include <dirent.h>
+ #include <sys/stat.h>
++#include <io.h>
++#include <direct.h>
++
++/*
++ * DOS has no symbolic links, whatever the C library's <sys/stat.h> says
++ * (Open Watcom defines S_IFLNK): lstat is stat, and no "file readlink".
++ */
++#undef S_IFLNK
++#undef S_ISLNK
+ #if TCL_SYS_TIME_H
+ /* #   include <sys/time.h> */
+ #else
+@@ -80,8 +89,7 @@
+  * isn't generally declared in a header file anywhere.
+  */
+ 
+-extern int errno;
+-extern int sys_nerr;
++/* errno and sys_nerr: declared by <errno.h> and <stdlib.h> */
+ /* extern char *sys_errlist[]; */
+ 
+ /*
+@@ -270,7 +278,7 @@
+ #if defined(_sgi) || defined(__sgi)
+ #define environ _environ
+ #endif
+-extern char **environ;
++/* environ: declared by <stdlib.h> */
+ 
+ /*
+  * Library procedures used by Tcl but not declared in a header file:
+diff -ru a/tcldosaz.c b/tcldosaz.c
+--- a/tcldosaz.c
++++ b/tcldosaz.c
+@@ -27,7 +27,7 @@
+  */
+ 
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+ /*
+  * The variable below caches the name of the current working directory
+diff -ru a/tcldosgl.c b/tcldosgl.c
+--- a/tcldosgl.c
++++ b/tcldosgl.c
+@@ -17,7 +17,7 @@
+  */
+ 
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+ /*
+  * The structure below is used to keep track of a globbing result
+diff -ru a/tcldosst.c b/tcldosst.c
+--- a/tcldosst.c
++++ b/tcldosst.c
+@@ -18,7 +18,7 @@
+  */
+ 
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+ /*
+  *----------------------------------------------------------------------
+diff -ru a/tcldosut.c b/tcldosut.c
+--- a/tcldosut.c
++++ b/tcldosut.c
+@@ -19,7 +19,7 @@
+  */
+ 
+ #include "tclInt.h"
+-#include "tclDos.h"
++#include "tcldos.h"
+ 
+ 
+ /*
