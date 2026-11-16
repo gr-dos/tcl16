@@ -9,7 +9,7 @@ source INC.SRC
 puts [incproc 5]
 puts $incvar
 puts [info exists incvar]
-puts [lsort [info commands l*]]
+puts [lsort [info commands li*]]
 puts [info tclversion]
 set log {}
 proc tr {n1 n2 op} {global log; lappend log "$n1 $op"}

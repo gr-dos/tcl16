@@ -5,7 +5,7 @@ a b
 105
 set by INC
 1
-lappend lindex linsert list llength loop lrange lreplace lsearch lsort
+lindex linsert list
 6.7
 {watched w} {watched w}
 9>0

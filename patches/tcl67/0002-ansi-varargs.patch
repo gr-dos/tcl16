@@ -1,0 +1,245 @@
+Define and declare Tcl 6.7's variadic functions with <stdarg.h> and ANSI
+prototypes (docs/M2-REPORT.md, section 5; M1's patches/0002 for Tiny
+Tcl, which shares this code).
+
+Tcl 6.7 defines Tcl_AppendResult, Tcl_SetErrorCode and Tcl_VarEval with
+<varargs.h> (included by tclInt.h), and tcl.h declares them as "f()" when
+compiling C, so callers see no prototype. Open Watcom passes the
+arguments of an unprototyped call in registers but reads those of a "..."
+definition from the stack, so every error message corrupted memory: the
+port's first error, "catch {incr x y}", wrote into the ROM BIOS under
+DOSBox-X and lost the script's output. Borland's default stack
+convention hid this. panic(), a K&R function of nine fixed arguments
+called with fewer, is made a vfprintf-based "..." function for the same
+reason, and tclHash.c's "extern void panic();" is removed in favour of
+tclInt.h's prototype.
+
+diff -ru a/panic.c b/panic.c
+--- a/panic.c
++++ b/panic.c
+@@ -21,6 +21,7 @@
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <stdarg.h>
+ 
+ /*
+  *----------------------------------------------------------------------
+@@ -38,17 +39,15 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-	/* VARARGS ARGSUSED */
+ void
+-panic(format, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+-    char *format;		/* Format string, suitable for passing to
+-				 * fprintf. */
+-    char *arg1, *arg2, *arg3;	/* Additional arguments (variable in number)
+-				 * to pass to fprintf. */
+-    char *arg4, *arg5, *arg6, *arg7, *arg8;
++panic(char *format, ...)	/* Format string, suitable for passing to
++				 * fprintf, then its arguments. */
+ {
+-    (void) fprintf(stderr, format, arg1, arg2, arg3, arg4, arg5, arg6,
+-	    arg7, arg8);
++    va_list argList;
++
++    va_start(argList, format);
++    (void) vfprintf(stderr, format, argList);
++    va_end(argList);
+     (void) fflush(stderr);
+     abort();
+ }
+diff -ru a/tcl.h b/tcl.h
+--- a/tcl.h
++++ b/tcl.h
+@@ -252,7 +252,8 @@
+ 
+ EXTERN void		Tcl_AppendElement _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, int noSep));
+-EXTERN void		Tcl_AppendResult _ANSI_ARGS_(VARARGS);
++EXTERN void		Tcl_AppendResult _ANSI_ARGS_(
++				(Tcl_Interp *interp, ...));
+ EXTERN char *		Tcl_AssembleCmd _ANSI_ARGS_((Tcl_CmdBuf buffer,
+ 			    char *string));
+ EXTERN void		Tcl_AddErrorInfo _ANSI_ARGS_((Tcl_Interp *interp,
+@@ -320,7 +321,8 @@
+ #define Tcl_Return Tcl_SetResult
+ EXTERN int		Tcl_ScanElement _ANSI_ARGS_((char *string,
+ 			    int *flagPtr));
+-EXTERN void		Tcl_SetErrorCode _ANSI_ARGS_(VARARGS);
++EXTERN void		Tcl_SetErrorCode _ANSI_ARGS_(
++				(Tcl_Interp *interp, ...));
+ EXTERN void		Tcl_SetResult _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, Tcl_FreeProc *freeProc));
+ EXTERN char *		Tcl_SetVar _ANSI_ARGS_((Tcl_Interp *interp,
+@@ -353,7 +355,8 @@
+ EXTERN void		Tcl_UntraceVar2 _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *part1, char *part2, int flags,
+ 			    Tcl_VarTraceProc *proc, ClientData clientData));
+-EXTERN int		Tcl_VarEval _ANSI_ARGS_(VARARGS);
++EXTERN int		Tcl_VarEval _ANSI_ARGS_(
++				(Tcl_Interp *interp, ...));
+ EXTERN ClientData	Tcl_VarTraceInfo _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *varName, int flags,
+ 			    Tcl_VarTraceProc *procPtr,
+diff -ru a/tclBasic.c b/tclBasic.c
+--- a/tclBasic.c
++++ b/tclBasic.c
+@@ -974,24 +974,17 @@
+  *
+  *----------------------------------------------------------------------
+  */
+-	/* VARARGS2 */ /* ARGSUSED */
+ int
+-#ifndef lint
+-Tcl_VarEval(va_alist)
+-#else
+-Tcl_VarEval(iPtr, p, va_alist)
+-    Tcl_Interp *iPtr;		/* Interpreter in which to execute command. */
+-    char *p;			/* One or more strings to concatenate,
++Tcl_VarEval(Tcl_Interp *interp, ...)
++				/* Interpreter in which to execute command,
++				 * then one or more strings to concatenate,
+ 				 * terminated with a NULL string. */
+-#endif
+-    va_dcl
+ {
+     va_list argList;
+ #define FIXED_SIZE 200
+     char fixedSpace[FIXED_SIZE+1];
+     int spaceAvl, spaceUsed, length;
+     char *string, *cmd;
+-    Tcl_Interp *interp;
+     int result;
+ 
+     /*
+@@ -1001,8 +994,7 @@
+      * space.
+      */
+ 
+-    va_start(argList);
+-    interp = va_arg(argList, Tcl_Interp *);
++    va_start(argList, interp);
+     spaceAvl = FIXED_SIZE;
+     spaceUsed = 0;
+     cmd = fixedSpace;
+diff -ru a/tclHash.c b/tclHash.c
+--- a/tclHash.c
++++ b/tclHash.c
+@@ -24,7 +24,7 @@
+  * Imported library procedures for which there are no header files:
+  */
+ 
+-extern void panic();
++/* panic: declared by tclInt.h */
+ 
+ /*
+  * When there are this many entries per bucket, on average, rebuild
+diff -ru a/tclInt.h b/tclInt.h
+--- a/tclInt.h
++++ b/tclInt.h
+@@ -43,7 +43,7 @@
+ #include <ctype.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <varargs.h>
++#include <stdarg.h>
+ 
+ /*
+  * At present (12/91) not all stdlib.h implementations declare strtod.
+@@ -640,7 +640,7 @@
+  *----------------------------------------------------------------
+  */
+ 
+-extern void		panic();
++extern void		panic _ANSI_ARGS_((char *format, ...));
+ extern regexp *		TclCompileRegexp _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string));
+ extern void		TclCopyAndCollapse _ANSI_ARGS_((int count, char *src,
+diff -ru a/tclUtil.c b/tclUtil.c
+--- a/tclUtil.c
++++ b/tclUtil.c
+@@ -1008,20 +1008,12 @@
+  *----------------------------------------------------------------------
+  */
+ 
+-	/* VARARGS2 */
+-#ifndef lint
+ void
+-Tcl_AppendResult(va_alist)
+-#else
+-void
+-	/* VARARGS2 */ /* ARGSUSED */
+-Tcl_AppendResult(interp, p, va_alist)
+-    Tcl_Interp *interp;		/* Interpreter whose result is to be
+-				 * extended. */
+-    char *p;			/* One or more strings to add to the
+-				 * result, terminated with NULL. */
+-#endif
+-    va_dcl
++Tcl_AppendResult(Tcl_Interp *interp, ...)
++				/* Interpreter whose result is to be
++				 * extended, then one or more strings to
++				 * add to the result, terminated with
++				 * NULL. */
+ {
+     va_list argList;
+     register Interp *iPtr;
+@@ -1033,8 +1025,8 @@
+      * needed.
+      */
+ 
+-    va_start(argList);
+-    iPtr = va_arg(argList, Interp *);
++    va_start(argList, interp);
++    iPtr = (Interp *) interp;
+     newSpace = 0;
+     while (1) {
+ 	string = va_arg(argList, char *);
+@@ -1060,8 +1052,7 @@
+      * them into the buffer.
+      */
+ 
+-    va_start(argList);
+-    (void) va_arg(argList, Tcl_Interp *);
++    va_start(argList, interp);
+     while (1) {
+ 	string = va_arg(argList, char *);
+ 	if (string == NULL) {
+@@ -1254,20 +1245,11 @@
+  *
+  *----------------------------------------------------------------------
+  */
+-	/* VARARGS2 */
+-#ifndef lint
+-void
+-Tcl_SetErrorCode(va_alist)
+-#else
+ void
+-	/* VARARGS2 */ /* ARGSUSED */
+-Tcl_SetErrorCode(interp, p, va_alist)
+-    Tcl_Interp *interp;		/* Interpreter whose errorCode variable is
+-				 * to be set. */
+-    char *p;			/* One or more elements to add to errorCode,
+-				 * terminated with NULL. */
+-#endif
+-    va_dcl
++Tcl_SetErrorCode(Tcl_Interp *interp, ...)
++				/* Interpreter whose errorCode variable is
++				 * to be set, then one or more elements to
++				 * add to errorCode, terminated with NULL. */
+ {
+     va_list argList;
+     char *string;
+@@ -1279,8 +1261,8 @@
+      * $errorCode as list elements.
+      */
+ 
+-    va_start(argList);
+-    iPtr = va_arg(argList, Interp *);
++    va_start(argList, interp);
++    iPtr = (Interp *) interp;
+     flags = TCL_GLOBAL_ONLY | TCL_LIST_ELEMENT;
+     while (1) {
+ 	string = va_arg(argList, char *);

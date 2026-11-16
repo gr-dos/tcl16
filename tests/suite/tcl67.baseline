@@ -1,0 +1,45 @@
+# Tcl 6.7's own test suite with the Tcl 6.7 DOS port (make test-suite-tcl67;
+# scripts/run-tcl-suite): the failures expected, as "FILE TEST..." lines,
+# "stopped" for a file that does not finish. docs/M2-REPORT.md, section 8.
+#
+# The results depend on the DOSBox-X version, so this is the union of
+# both:
+#
+# - DOSBox-X 2026.01.02 (Ubuntu 26.04): COMMAND /C reports a nonzero
+#   status for every external program, even one that exits 0. The port's
+#   exec runs commands through system(), so it fails, and these seven
+#   files stop at their first exec fixture (cat, pwd, mkdir).
+# - DOSBox-X 2024.03.01 (Ubuntu 24.04, CI): exec works, the files run,
+#   and the failures below are the port's and DOS's.
+cd stopped
+exec stopped
+file stopped
+glob stopped
+info stopped
+open stopped
+source stopped
+
+# DOS: chdir to a file is "no such file", not "not a directory".
+cd cd-4.3
+
+# The port's exec: a program that is not found is not an error (the shell
+# prints a message, which becomes the result, and exits 0); its own
+# messages for a bad redirection; and exec-10.2, "exec cat > a/b/c",
+# hangs: the shell cannot redirect, runs cat anyway, and cat reads the
+# keyboard, as the port gives a child no other input. The file stops
+# there (above) when DOSBox-X's timeout ends the session.
+exec exec-7.1 exec-7.2 exec-7.3 exec-7.4 exec-8.6 exec-8.8
+
+# DOS: no permission bits (executable, owned, readable, writable and
+# the mode the fixtures set with chmod); text mode writes CRLF, so sizes
+# grow by a byte a line; file times have two-second steps. The port: no
+# ~user.
+file file-4.1 file-7.2 file-8.2 file-9.1 file-10.2 file-11.1 file-11.2
+file file-11.3 file-15.10
+
+# glob stops at its fixture (above): DOS mkdir takes one directory and
+# no "/".
+
+# DOS: text mode, so tell and seek count CRLF. The port: the error
+# message shows the path converted to "\".
+open open-1.7 open-3.2 open-10.4

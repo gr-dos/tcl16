@@ -10,7 +10,7 @@ use File::Spec;
 
 =head1 NAME
 
-measure - the M1 size, memory, stack and speed figures of TCL.EXE variants
+measure - the size, memory, stack and speed figures of TCL.EXE variants
 
 =head1 SYNOPSIS
 
@@ -57,7 +57,8 @@ floating point goes through the software emulator, as on an 8088 with no
 8087. These are emulator figures, not measurements of real hardware; the
 ticks are only good for comparing variants and candidates.
 
-Writes F<build/measure/report.txt> and prints it. Environment: DOSBOX
+Writes F<report.txt> in MEASURE_OUT (default F<build/measure>) and prints
+it. Environment: DOSBOX
 (default dosbox-x), CYCLES, DOSBOX_TIMEOUT (default 1200 seconds per
 variant).
 
@@ -69,7 +70,7 @@ my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
 my $cycles = $ENV{CYCLES} // 315;
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 1200;
 my $top = File::Spec->rel2abs(File::Spec->catdir((File::Spec->splitpath($0))[1], '..'));
-my $out = File::Spec->rel2abs('build/measure');
+my $out = File::Spec->rel2abs($ENV{MEASURE_OUT} // 'build/measure');
 remove_tree($out);
 make_path($out);
 
@@ -165,13 +166,13 @@ my @lines;
 my $row = sub (@cells) {
     push @lines, sprintf('  %-26s' . (' %9s' x @names), @cells);
 };
-push @lines, "M1 measurements: DOSBox-X, cputype 8086, fixed $cycles cycles/ms";
+push @lines, "Measurements: DOSBox-X, cputype 8086, fixed $cycles cycles/ms";
 push @lines, '';
 push @lines, 'Sizes (KB)';
 $row->('', @names);
 $row->('TCL.EXE', map { kb(v($_, 'size')) } @names);
 $row->('load image', map { kb(v($_, 'image')) } @names);
-$row->('code: Tiny Tcl + tcl16', map { kb(v($_, 'tclcode')) } @names);
+$row->('code: Tcl + tcl16', map { kb(v($_, 'tclcode')) } @names);
 $row->('code: Open Watcom runtime', map { kb(v($_, 'rtcode')) } @names);
 $row->('DGROUP data', map { kb(v($_, 'dgroup')) } @names);
 $row->('stack', map { kb(v($_, 'stack')) } @names);

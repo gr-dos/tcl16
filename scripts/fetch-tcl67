@@ -1,0 +1,88 @@
+#!/bin/sh
+#
+# Fetch M2's candidate, Peter Sprenger's 1993 MS-DOS port of Tcl 6.7, and
+# the stock Tcl 6.7 release it was made from (docs/PROVENANCE.md, "Tcl
+# 6.7 DOS port"). Neither is vendored: the port's own files carry no
+# license notice and its archive holds a Borland header, binaries and
+# third-party documents, so tcl16 does not redistribute it. Both archives
+# are checked against the SHA-256 below before they are unpacked.
+#
+# usage: scripts/fetch-tcl67 [DIR]      (default: build/tcl67)
+#
+# Makes, in DIR:
+#   download/           the two archives, as fetched
+#   port/               tcl67dos.zip's TCL/ tree, exactly as released
+#                       (CRLF, 8.3 upper-case names)
+#   upstream/           the port's C sources and headers with LF line
+#                       ends and no DOS end-of-file byte (^Z), under Tcl
+#                       6.7's own file names (the names the sources
+#                       #include, and the names of the stock release;
+#                       RENAME.TXT): the base of patches/tcl67
+#   tcl6.7/             the stock Tcl 6.7 release (tcl6.7.tar.gz)
+#
+# TCL67DOS_URL and TCL67_URL, if set, are fetched instead (a mirror, or a
+# file:// URL); they must have the same SHA-256.
+
+set -eu
+
+# SourceForge project "tcl", Tcl/6.7: the DOS port as uploaded there on
+# 2008-06-06, a zip of the 1993 tcl67dos.zip.
+dos_sha256=ccab22130cc23280b2ff40c48a0edae5aec8080283c350d1b70af80d122880e8
+inner_sha256=e88e2e1024e17908ca0fe6d69b89661628d740835daff272d9eb3ce745f3abb5
+dos_url=${TCL67DOS_URL:-https://sourceforge.net/projects/tcl/files/Tcl/6.7/tcl67.dos.port.zip/download}
+tcl_sha256=13ee4d194b906ddeb59f6d9dcefbf4c94ce431a00f10a57d877b1aa60f1449d0
+tcl_url=${TCL67_URL:-https://sourceforge.net/projects/tcl/files/Tcl/6.7/tcl6.7.tar.gz/download}
+
+dir=${1:-build/tcl67}
+stamp="$dir/.fetched"
+want="$dos_sha256 $tcl_sha256"
+[ "$(cat "$stamp" 2>/dev/null)" = "$want" ] && exit 0
+
+fetch() {   # fetch FILE URL SHA256
+  if ! { [ -f "$1" ] && echo "$3  $1" | sha256sum -c --status; }; then
+    rm -f "$1"
+    curl -fsSL -o "$1.tmp" "$2"
+    echo "$3  $1.tmp" | sha256sum -c --quiet
+    mv "$1.tmp" "$1"
+  fi
+}
+
+mkdir -p "$dir/download"
+fetch "$dir/download/tcl67.dos.port.zip" "$dos_url" "$dos_sha256"
+fetch "$dir/download/tcl6.7.tar.gz" "$tcl_url" "$tcl_sha256"
+
+rm -rf "$dir/port" "$dir/upstream" "$dir/tcl6.7" "$dir/tmp"
+mkdir -p "$dir/tmp/outer" "$dir/tmp/inner"
+unzip -q "$dir/download/tcl67.dos.port.zip" -d "$dir/tmp/outer"
+inner="$dir/tmp/outer/tcl67.dos.port/tcl67dos.zip"
+echo "$inner_sha256  $inner" | sha256sum -c --quiet
+unzip -q "$inner" -d "$dir/tmp/inner"
+mv "$dir/tmp/inner/TCL" "$dir/port"
+tar -xzf "$dir/download/tcl6.7.tar.gz" -C "$dir/tmp"
+mv "$dir/tmp/tcl6.7" "$dir/tcl6.7"
+rm -rf "$dir/tmp"
+
+# Tcl 6.7's names: the port removed the "tcl" prefix of the C files
+# (RENAME.TXT) and upper-cased everything for DOS.
+mkdir "$dir/upstream"
+for f in "$dir"/port/*.C "$dir"/port/*.H; do
+  b=$(basename "$f" | tr 'A-Z' 'a-z')
+  case $b in
+    panic.c|regexp.c|regexp.h|tcl.h|msdos.c|msdos.h|tclerrno.h) n=$b ;;
+    tclint.h) n=tclInt.h ;;
+    tclhash.h) n=tclHash.h ;;
+    tclunix.h) n=tclUnix.h ;;
+    test.c) n=tclTest.c ;;
+    unixaz.c) n=tclUnixAZ.c ;;
+    unixstr.c) n=tclUnixStr.c ;;
+    unixutil.c) n=tclUnixUtil.c ;;
+    cmdah.c) n=tclCmdAH.c ;;
+    cmdil.c) n=tclCmdIL.c ;;
+    cmdmz.c) n=tclCmdMZ.c ;;
+    *.c) n=tcl$(echo "$b" | cut -c1 | tr 'a-z' 'A-Z')$(echo "$b" | cut -c2-) ;;
+    *) echo "fetch-tcl67: unexpected file $f" >&2; exit 1 ;;
+  esac
+  tr -d '\r\032' < "$f" > "$dir/upstream/$n"
+done
+
+echo "$want" > "$stamp"

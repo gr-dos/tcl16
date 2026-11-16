@@ -21,3 +21,6 @@ puts [format "%d%%" 99]
 set n 0
 for {set i 0} {$i < 50} {incr i} {incr n 1000}
 puts $n
+# scan stores integers in a long (patches/0006-scan-long.patch).
+puts [scan "12345670 70000 -1 ff" "%o %d %d %x" a b c d]:$a:$b:$c:$d
+puts [scan "abc 3000000000" "%s %D" s e]:$s

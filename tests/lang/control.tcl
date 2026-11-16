@@ -1,4 +1,4 @@
-# if, while, for, foreach, break, continue, case, loop.
+# if, while, for, foreach, break, continue, case.
 set x 3
 if {$x == 1} {puts one} elseif {$x == 3} {puts three} else {puts other}
 if {$x > 5} then {puts big} else {puts small}
@@ -11,7 +11,6 @@ puts "sum $sum"
 foreach v {a b c} {if {$v == "b"} break; puts "foreach $v"}
 case abc in {a*} {puts "case a*"} default {puts "case default"}
 case xyz in {a* b*} {puts ab} default {puts "case default"}
-loop j 0 3 {puts "loop $j"}
 set n 0
 for {set i 0} {$i < 1000} {incr i} {incr n 2}
 puts "n $n"

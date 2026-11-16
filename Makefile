@@ -4,7 +4,13 @@
 # M1 evaluates the first candidate, Tiny Tcl 6.8.1 (docs/M1-REPORT.md).
 # Its source is vendored, unmodified, in vendor/tinytcl-6.8.1
 # (docs/PROVENANCE.md); build/src is that tree with CRLF turned into LF
-# and patches/* applied in order. tcl16's own C files are in src/.
+# and patches/*.patch applied in order. tcl16's own C files are in src/.
+#
+# M2 evaluates the second, Peter Sprenger's 1993 MS-DOS port of Tcl 6.7
+# (docs/M2-REPORT.md). It is fetched, not vendored (scripts/fetch-tcl67;
+# docs/PROVENANCE.md), into build/tcl67; build/tcl67/src is its sources
+# with patches/tcl67/*.patch applied, and build/tcl67/dev/TCL.EXE its
+# development build. The *-tcl67 targets are M2's counterparts of M1's.
 #
 # build/dev/TCL.EXE is the M1 development build: large model, 8086
 # instructions, linked with Open Watcom's C runtime, because libc16 does
@@ -97,7 +103,7 @@ $(TOOLS_ENV): $(LIBC16L)
 	  && printf 'WATCOM=%s\nexport WATCOM\n' "$$watcom" > $@
 
 test: $(DEV)/TCL.EXE
-	perl tests/run-dos $(DEV)/TCL.EXE tests/lang tests/dos
+	perl tests/run-dos $(DEV)/TCL.EXE tests/lang tests/dos tests/tinytcl
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
@@ -125,6 +131,76 @@ variants: $(SRC)/.stamp $(TOOLS_ENV)
 measure: variants
 	perl scripts/measure build/var $(VARIANTS) os+nofpu
 
+# M2: the Tcl 6.7 DOS port. Its modules, as the port's TCL.PRJ lists
+# them, under Tcl 6.7's file names (scripts/fetch-tcl67); tclTest.c, the
+# upstream test driver, is replaced by src/main.c.
+T67         := build/tcl67
+T67_SRC     := $(T67)/src
+T67_DEV     := $(T67)/dev
+T67_NAMES   = msdos tclUnixAZ tclUnixStr tclUnixUtil tclGlob tclEnv panic \
+              tclAssem tclBasic tclCkalloc tclCmdAH tclCmdIL tclCmdMZ \
+              tclExpr tclGet tclHash tclHistory tclParse tclProc regexp \
+              tclUtil tclVar
+T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(DEV_CFLAGS)) -DTCL16_TCL67
+T67_OBJS    = $(T67_NAMES:%=$(T67_DEV)/%.obj) $(T16_NAMES:%=$(T67_DEV)/%.obj)
+T67_PATCHES = $(sort $(wildcard patches/tcl67/*.patch))
+
+tcl67: $(T67_DEV)/TCL.EXE
+
+$(T67)/.fetched: scripts/fetch-tcl67
+	sh scripts/fetch-tcl67 $(T67)
+
+$(T67_DEV)/TCL.EXE: $(T67_OBJS) $(TOOLS_ENV)
+	$(WATCOM_ENV) && wlink $(DEV_LDOPTS), map=$(T67_DEV)/tcl.map \
+	  system dos name $@ $(T67_OBJS:%=file %)
+
+$(T67_DEV)/%.obj: $(T67_SRC)/%.c $(T67_SRC)/.stamp $(TOOLS_ENV)
+	mkdir -p $(T67_DEV)
+	$(WATCOM_ENV) && $(CC) $(T67_CFLAGS) -fo=$@ $<
+
+$(T67_DEV)/%.obj: src/%.c $(T67_SRC)/.stamp $(TOOLS_ENV)
+	mkdir -p $(T67_DEV)
+	$(WATCOM_ENV) && $(CC) $(T67_CFLAGS) -fo=$@ $<
+
+$(T67_SRC)/%.c: $(T67_SRC)/.stamp ;
+
+$(T67_SRC)/.stamp: $(T67)/.fetched $(T67_PATCHES)
+	rm -rf $(T67_SRC) $(T67_SRC).tmp
+	cp -R $(T67)/upstream $(T67_SRC).tmp
+	for p in $(T67_PATCHES); do \
+	  patch -s -p1 -F0 -d $(T67_SRC).tmp < $$p || exit 1; done
+	mv $(T67_SRC).tmp $(T67_SRC)
+	touch $@
+
+test-tcl67: $(T67_DEV)/TCL.EXE
+	WORK=$(T67)/run-dos perl tests/run-dos $(T67_DEV)/TCL.EXE \
+	  tests/lang tests/dos tests/tcl67
+
+# Tcl 6.7's own test suite, from the port's archive (scripts/run-tcl-suite),
+# with each candidate: the language both share, measured the same way.
+test-suite-tcl67: $(T67_DEV)/TCL.EXE
+	perl scripts/run-tcl-suite $(T67_DEV)/TCL.EXE $(T67)/port/TESTS \
+	  $(T67)/port/UTIL $(T67)/suite tests/suite/tcl67.baseline
+
+test-suite: $(DEV)/TCL.EXE $(T67)/.fetched
+	perl scripts/run-tcl-suite $(DEV)/TCL.EXE $(T67)/port/TESTS \
+	  $(T67)/port/UTIL build/suite tests/suite/tinytcl.baseline
+
+libc16-try-tcl67: $(T67_SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
+	$(WATCOM_ENV) && TRY_DEFS=-DTCL16_TCL67 sh scripts/try-libc16 \
+	  $(T67_SRC) $(LIBC16_DIR) $(T67)/libc16-try \
+	  $(T67_NAMES:%=$(T67_SRC)/%.c) src/main.c src/stack.c
+
+variants-tcl67: $(T67_SRC)/.stamp $(TOOLS_ENV)
+	rm -f $(T67)/var/FREEMEM.EXE
+	$(WATCOM_ENV) && for v in $(VARIANTS); do \
+	  VAR_SRC=$(T67_SRC) VAR_OUT=$(T67)/var VAR_NAMES="$(T67_NAMES)" \
+	  VAR_DEFS=-DTCL16_TCL67 sh scripts/build-variant $$v || exit 1; done
+
+measure-tcl67: variants-tcl67
+	MEASURE_OUT=$(T67)/measure perl scripts/measure $(T67)/var \
+	  $(VARIANTS) os+nofpu
+
 check-vendor:
 	sh scripts/check-vendor
 
@@ -134,13 +210,17 @@ check-vendor-zip:
 clean:
 	rm -rf $(SRC) $(SRC).tmp $(DEV) build/var build/host build/libc16-try \
 	  build/run-dos build/run-host build/measure
+	rm -rf $(T67_SRC) $(T67_SRC).tmp $(T67_DEV) $(T67)/var \
+	  $(T67)/libc16-try $(T67)/run-dos $(T67)/measure $(T67)/suite \
+	  build/suite
 
 help:
 	$(info $(HELP))
 	@:
 
 define HELP
-tcl16 build (M1: Tiny Tcl 6.8.1). Usage: make [TARGET] [VARIABLE=value ...]
+tcl16 build (M1: Tiny Tcl 6.8.1; M2: Tcl 6.7 DOS port).
+Usage: make [TARGET] [VARIABLE=value ...]
 
 Build
   make, make all      build/dev/TCL.EXE, the M1 development build (large
@@ -151,9 +231,12 @@ Build
   make help           this list
 
 Tests
-  make test           tests/lang and tests/dos with build/dev/TCL.EXE under
-                      DOSBox-X, on an emulated 8086 (tests/run-dos)
+  make test           tests/lang, tests/dos and tests/tinytcl with
+                      build/dev/TCL.EXE under DOSBox-X, on an emulated
+                      8086 (tests/run-dos)
   make test-host      tests/lang with build/host/tclhost (tests/run-host)
+  make test-suite     Tcl 6.7's own test suite (from the M2 download) with
+                      build/dev/TCL.EXE, against tests/suite/tinytcl.baseline
 
 Evaluation (docs/M1-REPORT.md)
   make libc16-try     compile against libc16's headers and link with
@@ -163,6 +246,17 @@ Evaluation (docs/M1-REPORT.md)
   make measure        sizes, memory, stack depth and timings of the variants
   make check-vendor   check vendor/tinytcl-6.8.1 against its manifest
   make check-vendor-zip   and against the upstream release zip (network)
+
+M2: the Tcl 6.7 DOS port (docs/M2-REPORT.md), fetched into build/tcl67
+  make tcl67          build/tcl67/dev/TCL.EXE, its development build
+  make test-tcl67     tests/lang, tests/dos and tests/tcl67 with it
+  make test-suite-tcl67   Tcl 6.7's own test suite with it, against
+                      tests/suite/tcl67.baseline
+  make libc16-try-tcl67   the libc16 experiment for it
+                      (build/tcl67/libc16-try/report.txt)
+  make variants-tcl67, make measure-tcl67
+                      its measurement builds and figures (build/tcl67/var,
+                      build/tcl67/measure)
 
 Variables
   LIBC16_ROOT=DIR     libc16 to use (default build/libc16, the pinned
@@ -177,4 +271,5 @@ endef
 .SECONDARY:
 
 .PHONY: all test host test-host libc16-try variants measure check-vendor \
-        check-vendor-zip clean help
+        check-vendor-zip clean help tcl67 test-tcl67 libc16-try-tcl67 \
+        variants-tcl67 measure-tcl67 test-suite test-suite-tcl67

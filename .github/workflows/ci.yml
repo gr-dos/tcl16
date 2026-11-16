@@ -18,6 +18,14 @@ jobs:
           path: build/tools
           key: libc16-tools-ubuntu-24.04-${{ hashFiles('scripts/fetch-libc16') }}
 
+      # M2's candidate, the Tcl 6.7 DOS port, is fetched from SourceForge
+      # rather than vendored (scripts/fetch-tcl67); the archives are
+      # cached per pin.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/tcl67/download
+          key: tcl67-download-${{ hashFiles('scripts/fetch-tcl67') }}
+
       - name: Install DOSBox-X, patch and gcc-multilib
         run: |
           sudo apt-get update
@@ -37,6 +45,25 @@ jobs:
       - name: Test (host reference build)
         run: make test-host
 
+      # Tcl 6.7's own test suite, from the M2 download, with Tiny Tcl;
+      # failures not in tests/suite/tinytcl.baseline fail the build.
+      - name: Test (Tcl 6.7 suite)
+        run: make test-suite
+
       - name: libc16 build experiment
         run: |
           make libc16-try
+
+      # M2: the Tcl 6.7 DOS port (docs/M2-REPORT.md), also an evaluation
+      # binary, not uploaded.
+      - name: Build (Tcl 6.7 DOS port)
+        run: make tcl67
+
+      - name: Test (Tcl 6.7 DOS port, DOSBox-X, 8086)
+        run: make test-tcl67
+
+      - name: Test (Tcl 6.7 DOS port, Tcl 6.7 suite)
+        run: make test-suite-tcl67
+
+      - name: libc16 build experiment (Tcl 6.7 DOS port)
+        run: make libc16-try-tcl67

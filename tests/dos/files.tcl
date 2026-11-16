@@ -25,11 +25,12 @@ puts [file exists OUT1.TXT]:[file exists NOPE.TXT]
 puts [file isfile OUT1.TXT]:[file isdirectory .]
 puts [file extension OUT1.TXT]:[file rootname OUT1.TXT]
 puts [file exists {C:\FILES.TCL}]:[file exists C:/FILES.TCL]
-puts [lsort [glob *.TXT]]
-puts [lsort [glob FIX*.*]]
+# The case of the names glob returns, and of the patterns that match them,
+# differs by candidate (tests/tinytcl/glob.tcl, tests/tcl67/glob.tcl).
+puts [string toupper [lsort [glob {*.[Tt][Xx][Tt]}]]]
+puts [string toupper [lsort [glob {[Ff][Ii][Xx]*.*}]]]
 puts [catch {glob *.NONE} m]:$m
 puts [catch {open NODIR\\X.TXT r} m]:[string match {couldn't open "NODIR\\X.TXT": *} $m]
 set f [open FIXTURE.DAT]
 puts [gets $f]
 close $f
-puts [expr {[llength [readdir .]] > 3}]

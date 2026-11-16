@@ -1,5 +1,6 @@
 /*
- * main.c - tcl16's M1 test driver for the Tiny Tcl 6.8.1 interpreter.
+ * main.c - tcl16's test driver for the candidate interpreters: Tiny Tcl
+ * 6.8.1 (M1) and, built with TCL16_TCL67, the Tcl 6.7 DOS port (M2).
  *
  * This is the minimum needed to run the portable test scripts and the
  * memory probes; it is not the TCL.EXE command line, which is M4's
@@ -14,7 +15,11 @@
  *
  * Unlike upstream's tinytcl.c it does not print a banner or source
  * tcl_sys/autoinit.tcl, and it leaves out the "echo" and "checkmem"
- * test commands.
+ * test commands. For Tcl 6.7, Tcl_CreateInterp makes every command but
+ * "history", which Tcl_RecordAndEval makes when it first records a
+ * command: the driver makes it at the start, and records interactive
+ * commands, as upstream's tclTest.c does; like tclTest.c, it sources no
+ * init.tcl.
  */
 
 #include <stdio.h>
@@ -22,11 +27,13 @@
 #include <string.h>
 #include "tcl.h"
 
-/* Initialisers of the TclX and readdir commands built in (tclXdbg.c,
+#ifndef TCL16_TCL67
+/* Initialisers of Tiny Tcl's TclX and readdir commands (tclXdbg.c,
  * tclXgen.c, readdir.c); upstream declares them nowhere usable. */
 void Tcl_InitDebug(Tcl_Interp *interp);
 void TclX_InitGeneral(Tcl_Interp *interp);
 int Tcl_InitReaddir(Tcl_Interp *interp);
+#endif
 #ifdef TCL16_PROBE
 /* m1probe, the M1 measurement command (probe.c; dev builds only). */
 int Tcl_InitProbe(Tcl_Interp *interp);
@@ -37,9 +44,13 @@ make_interp(void)
 {
     Tcl_Interp *interp = Tcl_CreateInterp();
 
+#ifndef TCL16_TCL67
     Tcl_InitDebug(interp);
     TclX_InitGeneral(interp);
     Tcl_InitReaddir(interp);
+#else
+    Tcl_InitHistory(interp);
+#endif
 #ifdef TCL16_PROBE
     Tcl_InitProbe(interp);
 #endif
@@ -98,7 +109,11 @@ run_interactive(Tcl_Interp *interp)
             continue;
         }
         partial = 0;
+#ifdef TCL16_TCL67
+        result = Tcl_RecordAndEval(interp, cmd, 0);
+#else
         result = Tcl_Eval(interp, cmd, 0, (char **) NULL);
+#endif
         if (result == TCL_OK) {
             if (*interp->result != '\0') {
                 printf("%s\n", interp->result);
