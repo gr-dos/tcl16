@@ -7,6 +7,11 @@ with the same tests, measurements and libc16 experiment as
 [M1-REPORT.md](M1-REPORT.md) for Tiny Tcl 6.8.1, so that M3 can compare
 them. This report does not choose.
 
+> **Decided in M3.** Tcl16 is built on Tiny Tcl 6.8.1:
+> [ADR-001-tcl-implementation.md](ADR-001-tcl-implementation.md) records
+> the decision and its reasons. The rest of this report is unchanged,
+> as the evidence for it.
+
 ## 1. Summary
 
 - **Source.** The candidate is Peter Sprenger's April 1993 MS-DOS port
