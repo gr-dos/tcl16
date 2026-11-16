@@ -29,9 +29,12 @@ them. This report does not choose.
   reaches 64 KB.
 - **Tests.** The port passes the shared portable tests and its own
   cases: 27 passed and 1 todo, the same DOS-path gap as Tiny Tcl.
-  On Tcl 6.7's own suite, both candidates give identical results once
-  DOS line ends are normalised: 35 of 42 files pass. The other 7 cannot
-  run their `exec`-made fixtures under DOSBox-X (section 8).
+  On Tcl 6.7's own suite, 35 of 42 files pass with both candidates once
+  DOS line ends are normalised. The other 7 make their fixtures with
+  `exec`. Tiny Tcl has none. The port's works with DOSBox-X 2024.03.01
+  (CI) but not with 2026.01.02. With the older version, 5 of the 7 run
+  to the end, and the failures they show are DOS's (text mode, no
+  permission bits) and the port's `exec` (section 8).
 - **Where the candidates differ** is the DOS layer (section 6):
 
   | | Tcl 6.7 DOS port | Tiny Tcl 6.8.1 |
@@ -48,6 +51,8 @@ them. This report does not choose.
     checks; a 300-character argument hangs the interpreter.
   - `exec` of a missing program succeeds, with the shell's message as
     its result.
+  - A child gets the console as its input, so `exec cat > a/b/c`, whose
+    redirection the shell cannot make, waits for the keyboard.
   - `exec` depends on the shell's exit status.
   - `to_bslash`/`to_slash` copy paths into 129-byte static buffers.
 - **libc16.** The core compiles unchanged with libc16 0.04's headers,
@@ -237,12 +242,20 @@ Each item has a test in `tests/tcl67` (and `tests/tinytcl`):
     exit status, and the shell's own messages are captured like any
     output. Under DOSBox-X, `exec nosuchpr` succeeds, with the result
     `Bad command or filename - "nosuchpr"`.
-  - Under DOSBox-X's own shell, **every external program reports
-    failure**. `COMMAND /C FREEMEM` exits nonzero even though FREEMEM
-    exits 0, and a plain Open Watcom `system("FREEMEM")` gets 1. Only
-    shell built-ins (`echo`, `ver`, `mkdir`) work in the tests. Real
-    DOS and GR-DOS have to be checked in M7; GR-DOS's COMMAND.COM does
-    not run on DOSBox-X's kernel.
+  - **It depends on the shell's version.** Under DOSBox-X 2026.01.02's
+    shell (Ubuntu 26.04), **every external program reports failure**:
+    `COMMAND /C FREEMEM` exits nonzero although FREEMEM exits 0, and a
+    plain Open Watcom `system("FREEMEM")` gets 1. Only shell built-ins
+    (`echo`, `ver`, `mkdir`) work. DOSBox-X 2024.03.01 (Ubuntu 24.04,
+    which CI uses) passes the status through, and there `exec` runs
+    programs. `tests/tcl67/exec` uses only built-ins, so it passes on
+    both. Real DOS and GR-DOS have to be checked in M7; GR-DOS's
+    COMMAND.COM does not run on DOSBox-X's kernel.
+  - **No input of its own.** Without `<` or `<<`, a child reads the
+    console. When the shell cannot make an output redirection
+    (`exec cat > a/b/c`), it runs the program anyway, and `cat` waits
+    for the keyboard. Tcl 6.7's `exec-10.2` hangs this way on both
+    DOSBox-X versions.
   - **Buffers.** `command[200]`, `input[40]`, `output[40]`, with
     `strcat`/`sprintf` and no checks. `exec echo` of a 300-character
     word hangs the interpreter. DOS limits a command tail to 126
@@ -356,7 +369,7 @@ Tiny Tcl's figures moved slightly from M1's, for example `TCL.EXE` at
 |---|---|---|
 | `tests/lang` (12), `tests/dos` (9): shared | 20 passed, 1 todo (`dospath`) | 20 passed, 1 todo (`dospath`) |
 | Candidate cases: `tests/tinytcl` (6), `tests/tcl67` (7) | 5 passed, 1 todo (`crlf`) | 7 passed |
-| Tcl 6.7's own suite, 42 files | 35 pass; 7 stop (no `exec`); `info-13.2` | 35 pass; 7 stop (`exec` under DOSBox-X); `info-13.2` |
+| Tcl 6.7's own suite, 42 files | 35 pass; 7 stop (no `exec`) | 2026.01.02: 35 pass, 7 stop (`exec` fails). 2024.03.01: 37 pass, 3 have failures, 2 stop |
 | Host reference (`make test-host`) | 11 passed, 1 skipped | (shared core; not built separately) |
 
 **Shared tests made candidate-neutral.** M1's tests assumed some Tiny
@@ -372,23 +385,50 @@ the shared cases now check what both should do:
 tests, renamed for DOS. `scripts/run-tcl-suite` runs each file in its
 own DOSBox-X session and lists the failed tests. Each candidate has a
 baseline in `tests/suite/`, and a failure outside it fails the build.
-The suite's files have CRLF line ends and some end with ^Z, so the
-runner converts them to LF text. Otherwise Tiny Tcl fails 41 of 42
-files on the file format alone (section 6).
+The runner adapts the setting, not the tests:
 
-With that, the two candidates give exactly the same results, as they
-share the core:
+- The suite's files have CRLF line ends and some end with ^Z, so it
+  converts them to LF text. Otherwise Tiny Tcl fails 41 of 42 files on
+  the file format alone (section 6).
+- Each file runs in `C:\T`, which is on `PATH`. The tests expect to
+  start outside the root and to find `cat` and `pwd` after a `cd`.
+- `HOME` is `C:\`, as the tests assume one.
+- The file is named in lower case, as `info-13.x` expects.
 
-- 35 files pass entirely, covering the parser, `expr`, lists, strings,
-  `regexp`, `scan`, `format`, `trace`, `upvar`, `uplevel`, procs,
-  `history`, `env` and more.
-- 7 files stop at the `exec cat`/`exec pwd` that makes their fixtures:
-  `cd`, `exec`, `file`, `glob`, `info`, `open` and `source`. Tiny Tcl
-  has no `exec`, and the port's fails under DOSBox-X (section 6).
-- `info-13.2` fails only because the runner names the file in upper
-  case.
+**Results.** On every file both candidates can run, they give exactly
+the same results, as they share the core. 35 files pass entirely,
+covering the parser, `expr`, lists, strings, `regexp`, `scan`,
+`format`, `trace`, `upvar`, `uplevel`, procs, `history`, `env` and
+more. Before patch 0006, both also failed `scan-1.21` to `1.24`.
 
-Before patch 0006, both also failed `scan-1.21` to `1.24`.
+The other 7 files (`cd`, `exec`, `file`, `glob`, `info`, `open`,
+`source`) make their fixtures with `exec cat`, `exec pwd` and `exec
+mkdir`:
+
+- **Tiny Tcl** has no `exec`, so all 7 stop at the first fixture.
+- **The port with DOSBox-X 2026.01.02** stops the same way, as every
+  external program reports failure (section 6).
+- **The port with DOSBox-X 2024.03.01** (as in CI) runs them:
+  - `info` and `source` pass.
+  - `cd`, `file` and `open` finish, with failures that are DOS's or the
+    port's DOS layer:
+    - text mode counts CRLF in `tell`, `seek` and `file size`
+      (`open-1.7`, `open-10.4`, `file-10.2`, `file-11.1`, `file-11.3`);
+    - DOS has no permission bits (`file-4.1`, `7.2`, `8.2`, `9.1`);
+    - file times move in two-second steps (`file-11.2`, which depends
+      on timing);
+    - `cd` into a file is "no such file" (`cd-4.3`);
+    - no `~user` (`file-15.10`);
+    - a path shown with `\` in an error (`open-3.2`).
+  - `exec` fails `exec-7.1` to `7.4` (a missing program is not an
+    error) and `8.6`/`8.8` (its own messages), then hangs at `10.2`
+    (section 6).
+  - `glob` stops at its fixture, as DOS `mkdir` takes one directory and
+    no `/`.
+
+`tests/suite/tcl67.baseline` is the union of both DOSBox-X versions, so
+the build passes on either, and the runner reports which baseline
+entries passed.
 
 ## 9. libc16 build experiment
 
@@ -453,8 +493,9 @@ This is evidence for M3, not a choice.
   Everything else is the University of California's code, as in Tiny
   Tcl.
 - **The DOS layer is weak where it matters most.** `exec` has unchecked
-  buffers, trusts the shell's status and cannot detect a missing
-  program, and none of it can be tested under DOSBox-X. The design
+  buffers, trusts the shell's status, cannot detect a missing program
+  and gives a child the keyboard as its input. Whether it works under
+  DOSBox-X at all depends on the version. The design
   calls for child processes and memory recovery (DESIGN.md, sections 8
   and 12), and this `exec` would have to be rewritten for that anyway.
 - **Scripts are capped at 32 KB**, where Tiny Tcl reads larger ones.

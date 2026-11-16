@@ -12,6 +12,3 @@ glob stopped
 info stopped
 open stopped
 source stopped
-# The runner names the file in upper case (INFO.TST); the test expects
-# the name it was given in lower case.
-info info-13.2

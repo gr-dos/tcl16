@@ -27,11 +27,13 @@ test that passes and, for one that fails, the test and C<---- NAME
 FAILED>. Each F<.TST> file runs in its own DOSBox-X session (core normal,
 cputype 8086, CGA machine), so that a crash in one does not hide the
 others, as C<TCL W.TCL FILE.TST>, where F<W.TCL> sources it inside
-C<catch> and then prints a marker. A file whose marker is missing
+C<catch> and then prints a marker. The files are in F<C:\T>, which is
+also on C<PATH>; F<RUN.BAT> sets C<HOME> to F<C:\>, which the tests
+assume, and names the file in lower case, as they do. A file whose marker is missing
 crashed, hung or exited; one where DOSBox-X logged a write to ROM
 corrupted memory.
 
-The work directory, OUT/NAME for each file, holds TCL.EXE, every file of
+The work directory, OUT/NAME/T for each file (OUT/NAME is drive C:), holds TCL.EXE, every file of
 TESTSDIR, made LF text with no DOS end-of-file byte (^Z), and the port's
 UNIX-like utilities from UTILDIR (F<cat>,
 F<wc>, F<whoami>, F<pwd>, F<printenv>), which F<exec.tst> runs. They are
@@ -64,7 +66,11 @@ die "no .TST files in $tests\n" unless @files;
 
 sub start ($file) {
     (my $name = lc $file) =~ s/\.tst$//;
-    my $w = "$out/$name";
+    # OUT/NAME is drive C:, and the tests run in C:\T, so that the
+    # directory they start in is not the root ([pwd] is C:/T, and tests
+    # build paths as "$cwd/NAME").
+    my $m = "$out/$name";
+    my $w = "$m/T";
     make_path($w);
     copy($exe, "$w/TCL.EXE") or die "copy $exe: $!\n";
     for my $f (glob("$tests/*"), glob("$util/*.EXE")) {
@@ -91,9 +97,14 @@ sub start ($file) {
         'puts stdout "@@done"';
     close $t;
     open my $b, '>:raw', "$w/RUN.BAT";
-    print $b map { "$_\r\n" } '@echo off', "TCL W.TCL " . uc($file) . " >OUT.TXT";
+    # HOME: the tests expect one, as on Unix (cd ~, open ~/...); DOS has
+    # none. The file name in lower case, as the tests compare
+    # [info script] with it (info-13.x).
+    # PATH: the utilities, wherever a test has gone with cd.
+    print $b map { "$_\r\n" } '@echo off', 'set HOME=C:\\',
+        'set PATH=C:\\T;%PATH%', "TCL W.TCL " . lc($file) . " >OUT.TXT";
     close $b;
-    open my $c, '>', "$w/DOSBOX.CNF";
+    open my $c, '>', "$m/DOSBOX.CNF";
     print $c <<~"END";
       [sdl]
       output=surface
@@ -103,8 +114,9 @@ sub start ($file) {
       core=normal
       cputype=8086
       [autoexec]
-      mount c "$w"
+      mount c "$m"
       c:
+      cd \\T
       call RUN.BAT
       exit
       END
@@ -113,10 +125,10 @@ sub start ($file) {
     if (!$pid) {
         $ENV{SDL_VIDEODRIVER} = 'dummy';
         $ENV{SDL_AUDIODRIVER} = 'dummy';
-        open STDOUT, '>', "$w/dosbox.log" or die;
+        open STDOUT, '>', "$m/dosbox.log" or die;
         open STDERR, '>&', \*STDOUT or die;
         exec 'timeout', '-s', 'KILL', $timeout, $dosbox, '-nogui', '-nomenu',
-            '-conf', "$w/DOSBOX.CNF" or die "exec: $!\n";
+            '-conf', "$m/DOSBOX.CNF" or die "exec: $!\n";
     }
     return $pid;
 }
@@ -136,12 +148,12 @@ while (@queue || $running) {
 my (%failed, %status, @lines);
 for my $file (@files) {
     (my $name = lc $file) =~ s/\.tst$//;
-    my $w = "$out/$name";
-    my ($o) = grep { uc(basename($_)) eq 'OUT.TXT' } glob "$w/*";
+    my $m = "$out/$name";
+    my ($o) = grep { uc(basename($_)) eq 'OUT.TXT' } glob "$m/T/*";
     my $text = defined $o ? slurp($o) =~ s/\r//gr : '';
     my @f = $text =~ /^---- (\S+) FAILED$/mg;
     $failed{$name} = \@f;
-    my $log = slurp("$w/dosbox.log");
+    my $log = slurp("$m/dosbox.log");
     if ($log =~ /Write .* to rom/i) {
         $status{$name} = 'rom-write';
     } elsif ($text =~ /^\@\@error (.*)$/m) {
