@@ -13,6 +13,7 @@
 #   VAR_OUT     output directory (build/var)
 #   VAR_NAMES   the candidate's modules in VAR_SRC (Tiny Tcl's)
 #   VAR_DEFS    more wcc options for every module (none)
+#   VAR_T16     tcl16's modules in src/ (main stack probe)
 #
 #   os      -os, 32 KB stack: build/dev/TCL.EXE again
 #   ox      -ox (speed), 32 KB stack
@@ -44,7 +45,7 @@ flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL ${VAR_DEF
 for m in $names; do
   wcc $flags -fo="$out/$m.obj" "$src/$m.c"
 done
-for m in main stack probe; do
+for m in ${VAR_T16:-main stack probe}; do
   wcc $flags -fo="$out/$m.obj" "src/$m.c"
 done
 {

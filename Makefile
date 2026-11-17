@@ -152,7 +152,10 @@ T67_NAMES   = msdos tclUnixAZ tclUnixStr tclUnixUtil tclGlob tclEnv panic \
               tclExpr tclGet tclHash tclHistory tclParse tclProc regexp \
               tclUtil tclVar
 T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(DEV_CFLAGS)) -DTCL16_TCL67
-T67_OBJS    = $(T67_NAMES:%=$(T67_DEV)/%.obj) $(T16_NAMES:%=$(T67_DEV)/%.obj)
+# Its driver is the M1/M2 test driver, frozen as src/tcl67main.c; Tcl16's
+# DOS layer (src/dostext.c, src/source.c) and command line are not built.
+T67_T16     = tcl67main stack probe
+T67_OBJS    = $(T67_NAMES:%=$(T67_DEV)/%.obj) $(T67_T16:%=$(T67_DEV)/%.obj)
 T67_PATCHES = $(sort $(wildcard patches/tcl67/*.patch))
 
 tcl67: $(T67_DEV)/TCL.EXE
@@ -199,13 +202,14 @@ test-suite: $(DEV)/TCL.EXE $(T67)/.fetched
 libc16-try-tcl67: $(T67_SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 	$(WATCOM_ENV) && TRY_DEFS=-DTCL16_TCL67 sh scripts/try-libc16 \
 	  $(T67_SRC) $(LIBC16_DIR) $(T67)/libc16-try \
-	  $(T67_NAMES:%=$(T67_SRC)/%.c) src/main.c src/stack.c
+	  $(T67_NAMES:%=$(T67_SRC)/%.c) src/tcl67main.c src/stack.c
 
 variants-tcl67: $(T67_SRC)/.stamp $(TOOLS_ENV)
 	rm -f $(T67)/var/FREEMEM.EXE
 	$(WATCOM_ENV) && for v in $(VARIANTS); do \
 	  VAR_SRC=$(T67_SRC) VAR_OUT=$(T67)/var VAR_NAMES="$(T67_NAMES)" \
-	  VAR_DEFS=-DTCL16_TCL67 sh scripts/build-variant $$v || exit 1; done
+	  VAR_DEFS=-DTCL16_TCL67 VAR_T16="$(T67_T16)" \
+	  sh scripts/build-variant $$v || exit 1; done
 
 measure-tcl67: variants-tcl67
 	MEASURE_OUT=$(T67)/measure perl scripts/measure $(T67)/var \
