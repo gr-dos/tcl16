@@ -102,8 +102,18 @@ $(TOOLS_ENV): $(LIBC16L)
 	watcom=$$(sh $(LIBC16_DIR)/tools/fetch-watcom $(CURDIR)/build/tools) \
 	  && printf 'WATCOM=%s\nexport WATCOM\n' "$$watcom" > $@
 
-test: $(DEV)/TCL.EXE
-	perl tests/run-dos $(DEV)/TCL.EXE tests/lang tests/dos tests/tinytcl
+# ERR2OUT.EXE runs a command with its standard error sent to its standard
+# output, so that a test can see diagnostics (tests/run-dos). A test tool,
+# never published.
+$(DEV)/ERR2OUT.EXE: tests/tools/err2out.c $(TOOLS_ENV)
+	mkdir -p $(DEV)
+	$(WATCOM_ENV) && $(CC) -q -zq -ms -0 -bt=dos -I$$WATCOM/h \
+	  -fo=$(DEV)/err2out.obj $< && \
+	  wlink option quiet system dos name $@ file $(DEV)/err2out.obj
+
+test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE
+	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE $(DEV)/TCL.EXE tests/lang \
+	  tests/dos tests/tinytcl
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
