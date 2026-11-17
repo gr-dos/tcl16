@@ -1,0 +1,13 @@
+1
+0:early
+0
+1:oops
+oops
+    while executing
+"error oops"
+    (procedure "p" line 2)
+    invoked from within
+"p"
+    (file "BIGERR.SRC" line 404)
+    invoked from within
+"source BIGERR.SRC"

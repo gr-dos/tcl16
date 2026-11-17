@@ -43,7 +43,7 @@ TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
               tclUtil tclEnv tcldosaz tcldosut tcldosst tcldosgl tclXdbg \
               tclXgen readdir
 # tcl16's own, in src/.
-T16_NAMES   = main stack probe
+T16_NAMES   = main stack dostext source probe
 
 # Development build: large model, 8086 instructions, Open Watcom's
 # headers and runtime, stack checking on. -zc puts string literals in the
@@ -113,13 +113,14 @@ $(DEV)/ERR2OUT.EXE: tests/tools/err2out.c $(TOOLS_ENV)
 
 test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE
 	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE $(DEV)/TCL.EXE tests/lang \
-	  tests/dos tests/tinytcl
+	  tests/dos tests/tinytcl tests/tcl16
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
 host: build/host/tclhost
 
-build/host/tclhost: $(SRC)/.stamp src/main.c src/stack.c scripts/build-host
+build/host/tclhost: $(SRC)/.stamp src/main.c src/stack.c src/dostext.c \
+  src/source.c src/tcl16.h scripts/build-host
 	sh scripts/build-host $(SRC) build/host
 
 test-host: build/host/tclhost
@@ -127,7 +128,8 @@ test-host: build/host/tclhost
 
 libc16-try: $(SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 	$(WATCOM_ENV) && sh scripts/try-libc16 $(SRC) $(LIBC16_DIR) \
-	  build/libc16-try $(TCL_NAMES:%=$(SRC)/%.c) src/main.c src/stack.c
+	  build/libc16-try $(TCL_NAMES:%=$(SRC)/%.c) src/main.c src/stack.c \
+	  src/dostext.c src/source.c
 
 # M1 measurements (docs/M1-REPORT.md, section 7): the variants' sizes and
 # the probe scripts' memory, stack and time figures under DOSBox-X.
