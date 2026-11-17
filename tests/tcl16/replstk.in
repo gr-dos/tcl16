@@ -1,0 +1,4 @@
+proc down {n} {return [down [expr {$n + 1}]]}
+catch {down 0} m
+set m
+puts ok

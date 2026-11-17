@@ -14,7 +14,7 @@ run-dos - run Tcl test scripts with a DOS TCL.EXE under DOSBox-X
 
 =head1 SYNOPSIS
 
-  tests/run-dos TCL.EXE DIR...
+  tests/run-dos [-e ERR2OUT.EXE] TCL.EXE DIR...
 
 =head1 DESCRIPTION
 
@@ -25,13 +25,22 @@ is turned into LF. Comment lines at the top of the script can say:
   # status: N        the expected exit status (default 0)
   # command: ARGS    run TCL ARGS instead of TCL NAME.TCL
   # todo: REASON     a known failure: reported, but not counted as one
+  # stderr: merged   run under ERR2OUT.EXE (-e), so that standard error
+                     goes to standard output and NAME.out has both
   # host: skip       (tests/run-host only) not run with the host build
 
 Any other file in DIR is a fixture, copied into the work directory
 under its name in upper case.
 
+A C<# command:> line may redirect standard input from a fixture
+(C<# command: -i E<lt>REPL.IN>); the harness adds C<E<gt>NAME.OUT>.
+
 COMMAND.COM cannot redirect standard error, so scripts report errors on
-standard output themselves, with C<catch>.
+standard output themselves, with C<catch>, or the case says
+C<# stderr: merged> and runs as C<ERR2OUT TCL ...>
+(F<tests/tools/err2out.c>), which sends TCL.EXE's standard error to its
+standard output. TCL.EXE flushes standard output before it writes a
+diagnostic, so the two keep their order.
 
 Each case runs in its own DOSBox-X session, on an emulated 8086 (core
 normal, cputype 8086, CGA machine) with C: mounted on a work directory
@@ -46,9 +55,12 @@ Adapted from gr-dos/perl16's tests/run-dos.
 
 =cut
 
+my $err2out;
+(undef, $err2out) = splice @ARGV, 0, 2 if @ARGV >= 2 && $ARGV[0] eq '-e';
 my ($exe, @dirs) = @ARGV;
-die "usage: $0 TCL.EXE DIR...\n" unless @dirs;
+die "usage: $0 [-e ERR2OUT.EXE] TCL.EXE DIR...\n" unless @dirs;
 die "$exe not found\n" unless -f $exe;
+die "$err2out not found\n" if defined $err2out && !-f $err2out;
 my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 60;
 
@@ -56,6 +68,8 @@ my $work = File::Spec->rel2abs($ENV{WORK} // 'build/run-dos');
 remove_tree($work);
 make_path($work);
 copy($exe, "$work/TCL.EXE") or die "copy $exe: $!\n";
+copy($err2out, "$work/ERR2OUT.EXE") or die "copy $err2out: $!\n"
+    if defined $err2out;
 
 sub slurp ($f) { open my $h, '<:raw', $f; local $/; my $s = <$h>; close $h; $s }
 
@@ -72,6 +86,12 @@ for my $dir (@dirs) {
             $case{status}  = $1 if /^#\s*status:\s*(\d+)/;
             $case{command} = "TCL $1" if /^#\s*command:\s*(.+?)\s*$/;
             $case{todo}    = $1 if /^#\s*todo:\s*(.+?)\s*$/;
+            $case{merged}  = 1 if /^#\s*stderr:\s*merged\s*$/;
+        }
+        if ($case{merged}) {
+            die "$t: # stderr: merged needs -e ERR2OUT.EXE\n"
+                unless defined $err2out;
+            $case{command} = "ERR2OUT $case{command}";
         }
         (my $exp = $t) =~ s/\.tcl$/.out/;
         die "$t: no $exp\n" unless -f $exp;

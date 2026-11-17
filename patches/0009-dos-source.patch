@@ -1,0 +1,219 @@
+Take Tcl_EvalFile from Tcl16's DOS layer (src/source.c; docs/DESIGN.md,
+sections 4 and 6).
+
+Tiny Tcl's Tcl_EvalFile, which "source" calls, read the script in binary
+mode, so a script in DOS text failed: a backslash before CR LF did not
+continue the line, a quoted value spanning lines kept the CR, and a ^Z at
+the end ran as a command (tests/tinytcl/crlf.tcl, ctrlz.tcl). Its
+fallback for a script too large to read whole, Tcl_SmallFootprintEvalFile,
+read lines of at most 254 bytes with fgets in text mode and handed each
+piece to Tcl_AssembleCmd, kept evaluating after "return", and returned an
+uninitialised result for an empty script. Both are removed here; Tcl16's
+own Tcl_EvalFile reads DOS text either way.
+
+diff -ru a/tcldosut.c b/tcldosut.c
+--- a/tcldosut.c
++++ b/tcldosut.c
+@@ -23,199 +23,11 @@
+ 
+ 
+ /*
+- *----------------------------------------------------------------------
+- *
+- * Tcl_SmallFootprintEvalFile --
+- *
+- *	Read in a file and process it using command assembly to minimize
+- *      memory demands at load time.
+- *
+- * Results:
+- *	A standard Tcl result, which is either the result of executing
+- *	the file or an error indicating why the file couldn't be read.
+- *
+- * Side effects:
+- *	Depends on the commands in the file.
+- *
+- *----------------------------------------------------------------------
+- */
+-
+-int
+-Tcl_SmallFootprintEvalFile(interp, fileName)
+-    Tcl_Interp *interp;		/* Interpreter in which to process file. */
+-    char *fileName;		/* Name of file to process.  Tilde-substitution
+-				 * will be performed on this name. */
+-{
+-    int result;
+-    struct stat statBuf;
+-    char *end, *oldScriptFile;
+-    char *completeCommand;
+-    Interp *iPtr = (Interp *) interp;
+-    char lineBuf[256];
+-    Tcl_CmdBuf cmdBuffer = Tcl_CreateCmdBuf();
+-    FILE *fp;
+-    int lineNumber = 0;
+-
+-    oldScriptFile = iPtr->scriptFile;
+-    iPtr->scriptFile = fileName;
+-#ifdef TCL_TILDE_SUBST
+-    fileName = Tcl_TildeSubst(interp, fileName);
+-    if (fileName == NULL) {
+-	goto error;
+-    }
+-#endif
+-    fp = fopen(fileName, "r");
+-    if (fp == (char *)NULL) {
+-	Tcl_AppendResult(interp, "couldn't read file \"", fileName,
+-		"\": ", Tcl_UnixError(interp), (char *) NULL);
+-	goto error;
+-    }
+-
+-    while (fgets (lineBuf, sizeof(lineBuf) - 1, fp) != NULL) {
+-        lineNumber++;
+-        completeCommand = Tcl_AssembleCmd (cmdBuffer, lineBuf);
+-        if (completeCommand != NULL) {
+-            result = Tcl_Eval(interp, completeCommand, 0, &end);
+-
+-            if (result == TCL_RETURN) {
+-	        result = TCL_OK;
+-            }
+-            if (result == TCL_ERROR) {
+-	        char msg[200];
+-        
+-	        /*
+-	         * Record information telling where the error occurred.
+-	         */
+-        
+-	        sprintf(msg, "\n    (file \"%.150s\", line %d, line %d within block)", 
+-                        fileName,
+-                        lineNumber,
+-		        interp->errorLine);
+-	        Tcl_AddErrorInfo(interp, msg);
+-                break;
+-            }
+-        }
+-    }
+-    fclose(fp);
+-    Tcl_DeleteCmdBuf (cmdBuffer);
+-    iPtr->scriptFile = oldScriptFile;
+-    return result;
+-
+-    error:
+-    iPtr->scriptFile = oldScriptFile;
+-    return TCL_ERROR;
+-}
+-
+-/*
+- *----------------------------------------------------------------------
+- *
+- * Tcl_EvalFile --
+- *
+- *	Read in a file and process the entire file as one gigantic
+- *	Tcl command.
+- *
+- * Results:
+- *	A standard Tcl result, which is either the result of executing
+- *	the file or an error indicating why the file couldn't be read.
+- *
+- * Side effects:
+- *	Depends on the commands in the file.
+- *
+- *----------------------------------------------------------------------
++ * tcl16: Tcl_SmallFootprintEvalFile and Tcl_EvalFile, which read a script
++ * in binary mode, are replaced by Tcl16's Tcl_EvalFile (src/source.c),
++ * which reads DOS text.
+  */
+ 
+-int
+-Tcl_EvalFile(interp, fileName)
+-    Tcl_Interp *interp;		/* Interpreter in which to process file. */
+-    char *fileName;		/* Name of file to process.  Tilde-substitution
+-				 * will be performed on this name. */
+-{
+-    int fileId, result;
+-    struct stat statBuf;
+-    char *cmdBuffer, *end, *oldScriptFile;
+-    Interp *iPtr = (Interp *) interp;
+-
+-    oldScriptFile = iPtr->scriptFile;
+-    iPtr->scriptFile = fileName;
+-#ifdef TCL_TILDE_SUBST
+-    fileName = Tcl_TildeSubst(interp, fileName);
+-    if (fileName == NULL) {
+-	goto error;
+-    }
+-#endif
+-    fileId = open(fileName, (O_RDONLY|O_BINARY), 0);
+-    if (fileId < 0) {
+-	Tcl_AppendResult(interp, "couldn't read file \"", fileName,
+-		"\": ", Tcl_UnixError(interp), (char *) NULL);
+-	goto error;
+-    }
+-    if (fstat(fileId, &statBuf) == -1) {
+-	Tcl_AppendResult(interp, "couldn't stat file \"", fileName,
+-		"\": ", Tcl_UnixError(interp), (char *) NULL);
+-	close(fileId);
+-	goto error;
+-    }
+-
+-    /* allocate memory using malloc -- we are willing to have malloc
+-     * fail here, and if so, we will recover...
+-     *
+-     * note that cmdBuffer must be freed by free, not ckfree, because
+-     * if mem debug is compiled in, they are not orthogonal
+-     */
+-    /*
+-     * read() and the length arithmetic below are int-sized: a file of
+-     * INT_MAX bytes or more is read line by line instead, like one
+-     * malloc cannot hold.
+-     */
+-    cmdBuffer = NULL;
+-    if (statBuf.st_size < INT_MAX) {
+-	cmdBuffer = (char *) malloc((unsigned) statBuf.st_size+1);
+-    }
+-    if (cmdBuffer == (char *)NULL) {
+-        /* malloc failed, close the file and use the small footprint
+-	 * version of eval file instead */
+-        close(fileId);
+-	iPtr->scriptFile = oldScriptFile;
+-        return Tcl_SmallFootprintEvalFile(interp, fileName);
+-    }
+-    if (read(fileId, cmdBuffer, (int) statBuf.st_size) != (int)statBuf.st_size) {
+-	Tcl_AppendResult(interp, "error in reading file \"", fileName,
+-		"\": ", Tcl_UnixError(interp), (char *) NULL);
+-	close(fileId);
+-	free(cmdBuffer);
+-	goto error;
+-    }
+-    if (close(fileId) != 0) {
+-	Tcl_AppendResult(interp, "error closing file \"", fileName,
+-		"\": ", Tcl_UnixError(interp), (char *) NULL);
+-	free(cmdBuffer);
+-	goto error;
+-    }
+-    cmdBuffer[statBuf.st_size] = 0;
+-    result = Tcl_Eval(interp, cmdBuffer, 0, &end);
+-    if (result == TCL_RETURN) {
+-	result = TCL_OK;
+-    }
+-    if (result == TCL_ERROR) {
+-	char msg[200];
+-
+-	/*
+-	 * Record information telling where the error occurred.
+-	 */
+-
+-	sprintf(msg, "\n    (file \"%.150s\" line %d)", fileName,
+-		interp->errorLine);
+-	Tcl_AddErrorInfo(interp, msg);
+-    }
+-    free(cmdBuffer);
+-    iPtr->scriptFile = oldScriptFile;
+-    return result;
+-
+-    error:
+-    iPtr->scriptFile = oldScriptFile;
+-    return TCL_ERROR;
+-}
+-
+ /*
+  *----------------------------------------------------------------------
+  *

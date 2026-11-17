@@ -9,7 +9,9 @@ between them. This report does not choose.
 > **Decided in M3.** Tcl16 is built on Tiny Tcl 6.8.1:
 > [ADR-001-tcl-implementation.md](ADR-001-tcl-implementation.md) records
 > the decision and its reasons. The rest of this report is unchanged,
-> as the evidence for it.
+> as the evidence for it. Since M4, section 9's notes are kept current
+> in [COMPATIBILITY.md](COMPATIBILITY.md), and section 6's libc16 gap in
+> DESIGN.md, section 4.2 (libc16 0.07).
 
 > **Added in M2.** Evaluating the Tcl 6.7 DOS port, which shares this
 > core, found more about Tiny Tcl ([M2-REPORT.md](M2-REPORT.md)):

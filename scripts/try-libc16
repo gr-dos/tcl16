@@ -16,6 +16,10 @@
 # The shims are part of the experiment, not a proposal: nothing here goes
 # into libc16 (docs/DESIGN.md, section 4).
 #
+# Every module is compiled with TCL16_LIBC16 defined, as a libc16 build
+# of tcl16 will be: it gives callbacks of the C library, such as lsort's
+# qsort comparator, libc16's __cdecl convention (TCL16_CDECL, tclInt.h).
+#
 # usage: scripts/try-libc16 SRC LIBC16DIR OUT SOURCE...
 #        TRY_DEFS: more wcc options for every module (TCL16_TCL67 for M2)
 #        (make libc16-try; needs wcc, wlink and wlib on PATH)
@@ -33,7 +37,7 @@ out=$(cd "$out" && pwd)
 inc=$(cd "$libc16/include" && pwd)
 lib=$(cd "$libc16/lib" && pwd)/LIBC16L.LIB
 
-flags="-q -zq -zl -zld -x -ml -0 -zc -s -bt=dos ${TRY_DEFS:-}"
+flags="-q -zq -zl -zld -x -ml -0 -zc -s -bt=dos -DTCL16_LIBC16 ${TRY_DEFS:-}"
 
 cat > "$out/shim/signal.h" <<'EOF'
 /* try-libc16 shim: Tiny Tcl includes <signal.h> but uses nothing in it. */

@@ -1,0 +1,65 @@
+Call qsort's comparator in the C library's calling convention.
+
+libc16 declares qsort, like every function it provides, __cdecl, and its
+comparator parameter as "int (__cdecl *)(const void *, const void *)".
+Open Watcom compiles SortCompareProc (lsort) in its default register
+convention, so with libc16's <stdlib.h> the call did not compile (make
+libc16-try, libc16 0.06 and later); a cast would have silenced the error
+and called the comparator with its arguments in the wrong place, as in
+patches/0002-ansi-varargs.patch. SortCompareProc is now defined with
+TCL16_CDECL (tclInt.h), which is __cdecl when TCL16_LIBC16 is defined
+(libc16 builds) and empty with Open Watcom's runtime, whose qsort calls
+back in the default convention.
+
+diff -ru a/tclCmdIL.c b/tclCmdIL.c
+--- a/tclCmdIL.c
++++ b/tclCmdIL.c
+@@ -25,7 +25,7 @@
+  * Forward declarations for procedures defined in this file:
+  */
+ 
+-static int		SortCompareProc _ANSI_ARGS_((CONST VOID *first,
++static int TCL16_CDECL	SortCompareProc _ANSI_ARGS_((CONST VOID *first,
+ 			    CONST VOID *second));
+ 
+ /*
+@@ -1154,11 +1154,13 @@
+ /*
+  * The procedure below is called back by qsort to determine
+  * the proper ordering between two elements.
++ *
++ * tcl16: in the C library's calling convention (TCL16_CDECL), with an
++ * ANSI definition to carry it.
+  */
+ 
+-static int
+-SortCompareProc(first, second)
+-    CONST VOID *first, *second;		/* Elements to be compared. */
++static int TCL16_CDECL
++SortCompareProc(CONST VOID *first, CONST VOID *second)
+ {
+     return strcmp(*((char **) first), *((char **) second));
+ }
+diff -ru a/tclInt.h b/tclInt.h
+--- a/tclInt.h
++++ b/tclInt.h
+@@ -656,6 +656,19 @@
+ 			    char *procName));
+ extern int		TclGetFrame _ANSI_ARGS_((Tcl_Interp *interp,
+ 			    char *string, CallFrame **framePtrPtr));
++/*
++ * tcl16: the calling convention of a function the C library calls back,
++ * such as a qsort comparator. libc16 declares its functions and their
++ * callbacks __cdecl; Open Watcom's own runtime, which the development
++ * build links, uses the compiler's default convention.
++ */
++
++#ifdef TCL16_LIBC16
++#   define TCL16_CDECL __cdecl
++#else
++#   define TCL16_CDECL
++#endif
++
+ extern int		TclGrowSize _ANSI_ARGS_((long need, long want));
+ extern int		TclStackExhausted _ANSI_ARGS_((void));
+ extern int		TclGetLong _ANSI_ARGS_((Tcl_Interp *interp,

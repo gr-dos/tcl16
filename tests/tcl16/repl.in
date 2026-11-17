@@ -1,0 +1,15 @@
+set x 10
+expr {$x * 2}
+proc add {a b} {
+    return [expr {$a + $b}]
+}
+add 3 4
+puts "two
+lines"
+set y [list a \
+  b]
+error oops
+break
+puts after
+set z
+return {returned}

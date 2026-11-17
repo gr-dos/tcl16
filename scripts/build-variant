@@ -13,22 +13,29 @@
 #   VAR_OUT     output directory (build/var)
 #   VAR_NAMES   the candidate's modules in VAR_SRC (Tiny Tcl's)
 #   VAR_DEFS    more wcc options for every module (none)
+#   VAR_T16     tcl16's modules in src/ (main stack dostext source probe)
 #
-#   os      -os, 32 KB stack: build/dev/TCL.EXE again
-#   ox      -ox (speed), 32 KB stack
-#   od      -od (no optimisation), 32 KB stack
+#   os      -os, 48 KB stack: build/dev/TCL.EXE again
+#   ox      -ox (speed), 48 KB stack
+#   od      -od (no optimisation), 48 KB stack
 #   stk16   -os, 16 KB stack
+#   stk32   -os, 32 KB stack (the default until M4)
+#   stk40   -os, 40 KB stack
 #   stk48   -os, 48 KB stack
+#   stk56   -os, 56 KB stack, near the DGROUP limit
 
 set -eu
 
 name=$1
 case $name in
-  os)    opt=-os; stack=32k ;;
-  ox)    opt=-ox; stack=32k ;;
-  od)    opt=-od; stack=32k ;;
+  os)    opt=-os; stack=48k ;;
+  ox)    opt=-ox; stack=48k ;;
+  od)    opt=-od; stack=48k ;;
+  stk32) opt=-os; stack=32k ;;
   stk16) opt=-os; stack=16k ;;
+  stk40) opt=-os; stack=40k ;;
   stk48) opt=-os; stack=48k ;;
+  stk56) opt=-os; stack=56k ;;
   *) echo "build-variant: unknown variant $name" >&2; exit 1 ;;
 esac
 
@@ -44,7 +51,7 @@ flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL ${VAR_DEF
 for m in $names; do
   wcc $flags -fo="$out/$m.obj" "$src/$m.c"
 done
-for m in main stack probe; do
+for m in ${VAR_T16:-main stack dostext source probe}; do
   wcc $flags -fo="$out/$m.obj" "src/$m.c"
 done
 {
