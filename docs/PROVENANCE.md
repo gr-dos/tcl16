@@ -85,6 +85,9 @@ patch begins with its explanation; docs/M1-REPORT.md has the evidence.
 | `0004-stack-guard.patch` | `Tcl_Eval` stops with a Tcl error when the stack is nearly gone (`TclStackExhausted`, in `src/stack.c`) |
 | `0005-sizes.patch` | `ckalloc` checks for NULL; buffer growth and its comparisons in `long`, with a clean stop past `INT_MAX`; `format` width and precision |
 | `0006-scan-long.patch` | `scan` stores integer fields in a `long` (added in M2, when Tcl 6.7's own test suite found the 16-bit wrap in both candidates) |
+| `0007-qsort-cdecl.patch` | `lsort`'s `qsort` comparator in the C library's calling convention: `__cdecl` for libc16 (`TCL16_CDECL`, with `TCL16_LIBC16`), found by `make libc16-try` with libc16 0.06 (M4) |
+| `0008-assemble-size.patch` | `Tcl_AssembleCmd`'s buffer growth in `long` through `TclGrowSize`, as in 0005 (M4) |
+| `0009-dos-source.patch` | Removes `Tcl_EvalFile` and `Tcl_SmallFootprintEvalFile` from `tcldosut.c`: Tcl16's own `src/source.c` reads scripts as DOS text (M4) |
 
 All patches are tcl16's own work, under Tiny Tcl's terms as modifications
 of it.
@@ -172,12 +175,15 @@ Tcl 6.7's interpreter core.
 
 ## tcl16's own files
 
-`src/main.c` (the test driver for both candidates), `src/stack.c` (the
-stack guard),
-`src/probe.c` (the `m1probe` measurement command), `scripts/`, `tests/`
-and `docs/` are written for tcl16. `tests/run-dos` is adapted from
-gr-dos/perl16's `tests/run-dos`; `scripts/fetch-libc16` is libc16's
-`consumers/fetch-libc16` with the 0.04 pin.
+`src/main.c` (the `TCL.EXE` command line and REPL, M4),
+`src/dostext.c` and `src/source.c` (DOS text and `source`, M4),
+`src/tcl16.h`, `src/stack.c` (the stack guard), `src/probe.c` (the
+`m1probe` measurement command), `src/tcl67main.c` (the M1/M2 test
+driver, kept for the M2 reference build), `scripts/`, `tests/` and
+`docs/` are written for tcl16. `tests/run-dos` is adapted from
+gr-dos/perl16's `tests/run-dos`, and `tests/tools/err2out.c` is
+perl16's; `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
+with the 0.07 pin.
 
 None of this work touches libc16. The libc16 experiment
 (`scripts/try-libc16`) writes declaration-only shims inside
@@ -188,11 +194,13 @@ libc16 (DESIGN.md, section 4).
 
 | Input | Pin |
 |---|---|
-| libc16 | release 0.04, `libc16-0.04.zip`, SHA-256 `f7c9af7daacfa236600b4d203a02f7c0ddedf55ce1b5120220d9aaf8a9d28e6e` (`scripts/fetch-libc16`), source revision `a37266e0aab307a049d4ae1e9148cdc814896cf7` |
-| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 0.04 names (its `tools/fetch-watcom`) |
+| libc16 | release 0.07, `libc16-0.07.zip`, SHA-256 `0a0f56e0145d3ffe9fb429812d968567066b83b4e68bd7917443e77f54e09720` (`scripts/fetch-libc16`), source revision `c23f0c7369a8ae4f9b1aa14e5d3277b555fa3a54` (M4; M1 to M3 pinned 0.04) |
+| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 0.07 names (its `tools/fetch-watcom`; 0.04 named the same one) |
 | DOSBox-X | the host's package, for the tests and measurements only |
 | gcc | the host's, with `-m32`, for `make host` only |
 
-libc16 0.05 (`rename`, `unlink`, `fseek`, `ftell`) exists in the libc16
-repository but was not released when M1 was done; see M1-REPORT.md,
-section 6.
+M1 to M3 measured libc16 0.04 (M1-REPORT.md, section 6). M4 pins 0.07,
+which has 0.05's `rename`, `unlink`, `remove`, `fseek` and `ftell` and
+0.06's `strtol`, `strcspn`, `strstr`, `qsort`, `abort`, `clearerr`,
+`isascii`, `fstat`, `getcwd` and `chdir`; DESIGN.md, section 4.2, has
+what is still missing.

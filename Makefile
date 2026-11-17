@@ -12,10 +12,14 @@
 # with patches/tcl67/*.patch applied, and build/tcl67/dev/TCL.EXE its
 # development build. The *-tcl67 targets are M2's counterparts of M1's.
 #
-# build/dev/TCL.EXE is the M1 development build: large model, 8086
+# M3 chose Tiny Tcl (docs/ADR-001-tcl-implementation.md). M4 gives it
+# Tcl16's command line, REPL and DOS text handling (src/main.c,
+# src/dostext.c, src/source.c; docs/COMPATIBILITY.md).
+#
+# build/dev/TCL.EXE is the development build: large model, 8086
 # instructions, linked with Open Watcom's C runtime, because libc16 does
-# not yet provide what the interpreter needs (make libc16-try; M1-REPORT,
-# section 6). It is an evaluation binary, not a release.
+# not yet provide what the interpreter needs (make libc16-try;
+# docs/DESIGN.md, section 4.2). It is not a release.
 #
 # The Open Watcom toolchain is the snapshot pinned by libc16, fetched by
 # the libc16 tree's tools/fetch-watcom into build/tools, as in the other
@@ -147,7 +151,7 @@ measure: variants
 
 # M2: the Tcl 6.7 DOS port. Its modules, as the port's TCL.PRJ lists
 # them, under Tcl 6.7's file names (scripts/fetch-tcl67); tclTest.c, the
-# upstream test driver, is replaced by src/main.c.
+# upstream test driver, is replaced by src/tcl67main.c.
 T67         := build/tcl67
 T67_SRC     := $(T67)/src
 T67_DEV     := $(T67)/dev
@@ -238,11 +242,11 @@ help:
 	@:
 
 define HELP
-tcl16 build (M1: Tiny Tcl 6.8.1; M2: Tcl 6.7 DOS port).
+tcl16 build (Tiny Tcl 6.8.1; M2 reference: Tcl 6.7 DOS port).
 Usage: make [TARGET] [VARIABLE=value ...]
 
 Build
-  make, make all      build/dev/TCL.EXE, the M1 development build (large
+  make, make all      build/dev/TCL.EXE, the development build (large
                       model, 8086, Open Watcom's C runtime; not a release)
   make host           build/host/tclhost, Tiny Tcl for Linux (gcc -m32), as
                       a 32-bit-int reference for the tests
@@ -250,9 +254,9 @@ Build
   make help           this list
 
 Tests
-  make test           tests/lang, tests/dos and tests/tinytcl with
-                      build/dev/TCL.EXE under DOSBox-X, on an emulated
-                      8086 (tests/run-dos)
+  make test           tests/lang, tests/dos, tests/tinytcl and tests/tcl16
+                      with build/dev/TCL.EXE under DOSBox-X, on an
+                      emulated 8086 (tests/run-dos)
   make test-host      tests/lang with build/host/tclhost (tests/run-host)
   make test-suite     Tcl 6.7's own test suite (from the M2 download) with
                       build/dev/TCL.EXE, against tests/suite/tinytcl.baseline
@@ -261,7 +265,8 @@ Evaluation (docs/M1-REPORT.md)
   make libc16-try     compile against libc16's headers and link with
                       LIBC16L.LIB; report what is missing
                       (build/libc16-try/report.txt)
-  make variants       the measurement builds in build/var
+  make variants       the measurement builds in build/var, which, unlike
+                      TCL.EXE, have the m1probe command
   make measure        sizes, memory, stack depth and timings of the variants
   make check-vendor   check vendor/tinytcl-6.8.1 against its manifest
   make check-vendor-zip   and against the upstream release zip (network)
