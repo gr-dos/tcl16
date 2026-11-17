@@ -1,0 +1,51 @@
+Grow the command buffer of Tcl_AssembleCmd within an int (docs/M1-REPORT.md,
+section 7.4; the same fix as patches/0005-sizes.patch).
+
+Tcl_AssembleCmd, which the REPL and "source" of a large file use to
+collect a command line by line, worked out its sizes in int: past 16384
+bytes "bufSize*2" overflowed and bufSize was stored negative, so the
+buffer was reallocated for every later line; and a command of more than
+INT_MAX bytes overflowed totalLength, which could skip the growth and
+copy the line past the end of the buffer. The sizes are now worked out
+in long by TclGrowSize, which keeps them within INT_MAX and panics
+("tcl16: string or list too long") when one command needs more.
+
+diff -ru a/tclAssem.c b/tclAssem.c
+--- a/tclAssem.c
++++ b/tclAssem.c
+@@ -140,7 +140,7 @@
+ 				 * matched or not. */
+ {
+     register CmdBuf *cbPtr = (CmdBuf *) buffer;
+-    int length, totalLength, c;
++    int length, c;
+ 
+     /*
+      * If an empty string is passed in, just pretend the current
+@@ -158,18 +158,19 @@
+      * Add the new information to the buffer.  If the current buffer
+      * isn't large enough, grow it by at least a factor of two, or
+      * enough to hold the new text.
++     *
++     * tcl16: the sizes are worked out in long by TclGrowSize, which
++     * panics if the command needs more than INT_MAX bytes; callers that
++     * can report an error instead check the length first (src/source.c).
+      */
+ 
+     length = strlen(string);
+-    totalLength = cbPtr->bytesUsed + length + 1;
+-    if (totalLength > cbPtr->bufSize) {
+-	unsigned int newSize;
++    if ((long) cbPtr->bytesUsed + length + 1 > cbPtr->bufSize) {
++	int newSize;
+ 	char *newBuf;
+ 
+-	newSize = cbPtr->bufSize*2;
+-	if (newSize < totalLength) {
+-	    newSize = totalLength;
+-	}
++	newSize = TclGrowSize((long) cbPtr->bytesUsed + length + 1,
++		2L*cbPtr->bufSize);
+ 	newBuf = (char *) ckalloc(newSize);
+ 	strcpy(newBuf, cbPtr->buffer);
+ 	ckfree(cbPtr->buffer);
