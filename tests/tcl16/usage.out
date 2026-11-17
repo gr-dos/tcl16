@@ -1,0 +1,10 @@
+Tcl16 development build (M4): Tcl 6.7 (Tiny Tcl 6.8.1) for DOS
+
+TCL                     interactive; end with EXIT or Ctrl-Z
+TCL script [arg ...]    run a script; argv0, argv and argc are set
+TCL -e text [arg ...]   run the Tcl commands in text (argv0 is -e)
+TCL -- script [arg ...] run a script whose name starts with -
+TCL /?                  this help
+
+Exit status: 0, or N for "exit N"; 1 after an uncaught error;
+2 for a bad command line.

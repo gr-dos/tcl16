@@ -4,3 +4,4 @@ vendor/tinytcl-6.8.1/** -text
 
 # Cases that are DOS text themselves (CR LF, ^Z), byte for byte.
 tests/tcl16/dosmain.tcl -text
+tests/tcl16/repldos.in -text

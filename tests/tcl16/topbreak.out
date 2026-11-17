@@ -1,0 +1,5 @@
+before
+Error: invoked "break" outside of a loop
+    while executing
+"break"
+    (file "TOPBREAK.TCL" line 5)

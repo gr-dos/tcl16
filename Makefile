@@ -42,8 +42,10 @@ TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
               tclParse panic regexp tclCmdIL tclalloc tclBasic tclExpr \
               tclUtil tclEnv tcldosaz tcldosut tcldosst tcldosgl tclXdbg \
               tclXgen readdir
-# tcl16's own, in src/.
-T16_NAMES   = main stack dostext source probe
+# tcl16's own, in src/: the command line, the stack guard and the DOS
+# layer. probe.c (m1probe) is only in the measurement builds
+# (scripts/build-variant), never in TCL.EXE.
+T16_NAMES   = main stack dostext source
 
 # Development build: large model, 8086 instructions, Open Watcom's
 # headers and runtime, stack checking on. -zc puts string literals in the
@@ -52,7 +54,7 @@ T16_NAMES   = main stack dostext source probe
 CC          = wcc
 OPT        ?= -os
 STACK      ?= 32k
-DEV_CFLAGS  = -q -zq -ml -0 -zc $(OPT) -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL \
+DEV_CFLAGS  = -q -zq -ml -0 -zc $(OPT) -bt=dos -DTCL16_STACKAVAIL \
               -I$(SRC) \
               -I$$WATCOM/h
 DEV_LDOPTS  = option quiet, stack=$(STACK)
@@ -153,7 +155,8 @@ T67_NAMES   = msdos tclUnixAZ tclUnixStr tclUnixUtil tclGlob tclEnv panic \
               tclAssem tclBasic tclCkalloc tclCmdAH tclCmdIL tclCmdMZ \
               tclExpr tclGet tclHash tclHistory tclParse tclProc regexp \
               tclUtil tclVar
-T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(DEV_CFLAGS)) -DTCL16_TCL67
+T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(DEV_CFLAGS)) -DTCL16_TCL67 \
+              -DTCL16_PROBE
 # Its driver is the M1/M2 test driver, frozen as src/tcl67main.c; Tcl16's
 # DOS layer (src/dostext.c, src/source.c) and command line are not built.
 T67_T16     = tcl67main stack probe

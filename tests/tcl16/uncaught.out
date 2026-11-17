@@ -1,0 +1,8 @@
+before
+Error: deep error
+    while executing
+"error "deep error""
+    (procedure "p" line 1)
+    invoked from within
+"p"
+    (file "UNCAUGHT.TCL" line 7)

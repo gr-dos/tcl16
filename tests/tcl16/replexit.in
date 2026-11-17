@@ -1,0 +1,3 @@
+puts hi
+exit 4
+puts never
