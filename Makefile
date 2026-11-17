@@ -53,7 +53,7 @@ T16_NAMES   = main stack dostext source
 # stack (M1-REPORT, section 7).
 CC          = wcc
 OPT        ?= -os
-STACK      ?= 32k
+STACK      ?= 48k
 DEV_CFLAGS  = -q -zq -ml -0 -zc $(OPT) -bt=dos -DTCL16_STACKAVAIL \
               -I$(SRC) \
               -I$$WATCOM/h
@@ -135,7 +135,7 @@ libc16-try: $(SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 
 # M1 measurements (docs/M1-REPORT.md, section 7): the variants' sizes and
 # the probe scripts' memory, stack and time figures under DOSBox-X.
-VARIANTS    = os ox od stk16 stk48
+VARIANTS    = os ox od stk16 stk32 stk40 stk56
 
 variants: $(SRC)/.stamp $(TOOLS_ENV)
 	rm -f build/var/FREEMEM.EXE
@@ -281,7 +281,8 @@ Variables
   LIBC16_ROOT=DIR     libc16 to use (default build/libc16, the pinned
                       release; or a checkout built with its own make)
   OPT=FLAGS           wcc optimisation flags of build/dev (default -os)
-  STACK=SIZE          stack size of build/dev/TCL.EXE (default 32k)
+  STACK=SIZE          stack size of build/dev/TCL.EXE (default 48k;
+                      docs/DESIGN.md, section 12)
   DOSBOX=PROG         DOSBox-X to run (default dosbox-x)
   DOSBOX_TIMEOUT=N    seconds per DOS test case (default 60)
 endef
