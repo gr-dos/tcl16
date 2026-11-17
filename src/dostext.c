@@ -48,9 +48,8 @@ Tcl16_DosText(char *buf, int length)
 {
     char *src, *dst, *end;
 
-    end = memchr(buf, CTRL_Z, length);
-    if (end == NULL) {
-	end = buf + length;
+    for (end = buf; end < buf + length && *end != CTRL_Z; end++) {
+	/* Find the ^Z, if any. */
     }
     for (src = dst = buf; src < end; src++) {
 	if ((*src == '\r') && (src + 1 < end) && (src[1] == '\n')) {

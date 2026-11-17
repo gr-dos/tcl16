@@ -24,8 +24,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <io.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "tclInt.h"
-#include "tcldos.h"
 #include "tcl16.h"
 
 static int	EvalByCommand(Tcl_Interp *interp, char *fileName, int fd);
