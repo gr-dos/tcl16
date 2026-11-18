@@ -282,9 +282,70 @@ FindProgram(Tcl_Interp *interp, char *name, char *path)
 }
 
 /*
+ * Puts back standard input, output and error from save[], the handles
+ * RedirectStd saved, closing them. A handle not saved (-1) was never
+ * changed. If DOS cannot put a handle back there is nothing better to
+ * do than go on: the saved copy is closed either way.
+ */
+
+static void
+RestoreStd(int save[3])
+{
+    int i;
+
+    for (i = 0; i < 3; i++) {
+	if (save[i] >= 0) {
+	    dup2(save[i], i);
+	    close(save[i]);
+	    save[i] = -1;
+	}
+    }
+}
+
+/*
+ * Makes handles in, out and err standard input, output and error,
+ * saving the old ones in save[] for RestoreStd. Returns 0, or -1 with
+ * errno, having put back whatever it had changed: all three handles are
+ * saved before any is changed, so a failure (no free handle, EMFILE)
+ * leaves Tcl's own standard handles as they were.
+ */
+
+static int
+RedirectStd(int in, int out, int err, int save[3])
+{
+    int fds[3], i, e;
+
+    fds[0] = in;
+    fds[1] = out;
+    fds[2] = err;
+    for (i = 0; i < 3; i++) {
+	save[i] = -1;
+    }
+    for (i = 0; i < 3; i++) {
+	save[i] = dup(i);
+	if (save[i] < 0) {
+	    goto failed;
+	}
+    }
+    for (i = 0; i < 3; i++) {
+	if (dup2(fds[i], i) != 0) {
+	    goto failed;
+	}
+    }
+    return 0;
+
+  failed:
+    e = errno;
+    RestoreStd(save);
+    errno = e;
+    return -1;
+}
+
+/*
  * Runs one command, words[0..n-1], with handles in, out and err as its
  * standard input, output and error. Stores its exit status. TCL_ERROR,
- * with a message, if it could not be run.
+ * with a message, if it could not be run; then nothing was run, and
+ * Tcl's standard handles are as they were.
  */
 
 static int
@@ -296,30 +357,29 @@ RunCommand(Tcl_Interp *interp, char **words, int n, int in, int out,
 
     how = FindProgram(interp, words[0], path);
     if (how == RUN_MISSING) {
-	char msg[DOS_PATH_MAX + 40];
-
 	/*
 	 * As in Tcl 6.7, where the forked child reported it: a message
-	 * on the command's standard error, and status 1.
+	 * on the command's standard error, and status 1. The name is
+	 * written as it is, however long, and is not changed.
 	 */
 
-	if (strlen(words[0]) > DOS_PATH_MAX) {
-	    words[0][DOS_PATH_MAX] = 0;
-	}
-	sprintf(msg, "couldn't find \"%s\" to execute\n", words[0]);
-	write(err, msg, strlen(msg));
+	static char before[] = "couldn't find \"", after[] = "\" to execute\n";
+
+	write(err, before, sizeof(before) - 1);
+	write(err, words[0], strlen(words[0]));
+	write(err, after, sizeof(after) - 1);
 	*statusPtr = 1;
 	return TCL_OK;
     }
 
     fflush(stdout);
     fflush(stderr);
-    for (i = 0; i < 3; i++) {
-	save[i] = dup(i);
+    if (RedirectStd(in, out, err, save) != 0) {
+	Tcl_AppendResult(interp, "couldn't redirect standard input or ",
+		"output for \"", words[0], "\": ", Tcl_UnixError(interp),
+		(char *) NULL);
+	return TCL_ERROR;
     }
-    dup2(in, 0);
-    dup2(out, 1);
-    dup2(err, 2);
 
     if (how == RUN_PROGRAM) {
 	saved = words[n];
@@ -358,11 +418,7 @@ RunCommand(Tcl_Interp *interp, char **words, int n, int in, int out,
 	}
     }
     spawnErrno = errno;
-
-    for (i = 0; i < 3; i++) {
-	dup2(save[i], i);
-	close(save[i]);
-    }
+    RestoreStd(save);
 
     if (code < 0) {
 	errno = spawnErrno;
@@ -485,12 +541,8 @@ Tcl16_ExecCmd(dummy, interp, argc, argv)
 	    } else if (i + 1 < argc) {
 		*target = argv[++i];
 	    } else {
-		char saved = a[skip];
-
-		a[skip] = 0;
 		Tcl_AppendResult(interp, "can't specify \"", a,
 			"\" as last word in command", (char *) NULL);
-		a[skip] = saved;
 		goto done;
 	    }
 	    continue;

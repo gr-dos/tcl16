@@ -40,9 +40,24 @@ void Tcl_InitDebug(Tcl_Interp *interp);
 void TclX_InitGeneral(Tcl_Interp *interp);
 int Tcl_InitReaddir(Tcl_Interp *interp);
 #ifdef TCL16_LIBC16
-/* Tcl16's exec (exec.c; DOS only: the host build has no exec). */
+/* Tcl16's exec (exec.c). */
 int Tcl16_ExecCmd(ClientData dummy, Tcl_Interp *interp, int argc,
     char **argv);
+#else
+/*
+ * The host reference build (scripts/build-host), which runs only
+ * tests/lang, has no exec.c: its exec is an error that says so.
+ */
+
+static int
+Tcl16_ExecCmd(ClientData dummy, Tcl_Interp *interp, int argc, char **argv)
+{
+    (void) dummy;
+    (void) argc;
+    (void) argv;
+    interp->result = "exec is not supported in the host build";
+    return TCL_ERROR;
+}
 #endif
 #ifdef TCL16_PROBE
 /* m1probe, the M1 measurement command (probe.c; measurement builds). */
@@ -72,10 +87,8 @@ MakeInterp(void)
     Tcl_InitDebug(interp);
     TclX_InitGeneral(interp);
     Tcl_InitReaddir(interp);
-#ifdef TCL16_LIBC16
     Tcl_CreateCommand(interp, "exec", Tcl16_ExecCmd, (ClientData) NULL,
 	    (Tcl_CmdDeleteProc *) NULL);
-#endif
 #ifdef TCL16_PROBE
     Tcl_InitProbe(interp);
 #endif

@@ -11,6 +11,11 @@
  *   -m        write the size of the largest free block of conventional
  *             memory, in bytes (INT 21h 48h with BX = FFFFh)
  *   -x N      exit with status N (the last thing it does)
+ *   -h K PROG ARG...
+ *             fill DOS's handle table (20 handles) with handles to NUL,
+ *             close K of them, and run PROG with the ARGs (spawnv), so
+ *             that PROG starts with only K free handles; exit with its
+ *             status (tests/tcl16/execfd)
  *
  * A test tool, built with libc16 in the small model; never part of a
  * release.
@@ -21,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <io.h>
+#include <process.h>
 #include <libc16.h>
 
 static void
@@ -73,6 +79,16 @@ main(int argc, char **argv)
 	    out(1, "\r\n");
 	} else if (strcmp(argv[i], "-x") == 0 && i + 1 < argc) {
 	    status = atoi(argv[++i]);
+	} else if (strcmp(argv[i], "-h") == 0 && i + 2 < argc) {
+	    int held[20], n = 0, k = atoi(argv[i + 1]);
+
+	    while (n < 20 && (held[n] = open("NUL", O_RDONLY)) >= 0) {
+		n++;
+	    }
+	    while (k-- > 0 && n > 0) {
+		close(held[--n]);
+	    }
+	    return spawnv(P_WAIT, argv[i + 2], argv + i + 2);
 	}
     }
     return status;

@@ -1,0 +1,6 @@
+1: before / exec 1:couldn't create temporary file "TCL00000.TMP": Too many open files / after
+3: before / exec 1:couldn't redirect standard input or output for "CHILD.EXE": Too many open files / after
+4: before / exec 1:couldn't redirect standard input or output for "CHILD.EXE": Too many open files / after
+5: before / exec 1:couldn't redirect standard input or output for "CHILD.EXE": Too many open files / after
+7: before / exec 0:hi / after
+1

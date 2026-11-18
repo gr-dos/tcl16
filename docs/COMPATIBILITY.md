@@ -263,6 +263,10 @@ On DOS:
   about 431 KB (441,264 bytes) of DOSBox-X's 589 KB (DESIGN.md, section
   12).
 - **Exit status.** DOS keeps a program's status modulo 256.
+- **Handles.** A DOS program has 20 handles. If `exec` cannot make its
+  temporary files or redirect the standard handles for lack of one, it
+  is an error ("Too many open files"), nothing is run, and Tcl's own
+  standard handles are left as they were (`tests/tcl16/execfd`).
 
 ## 7. Other differences
 
