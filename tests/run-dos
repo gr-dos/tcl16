@@ -14,7 +14,7 @@ run-dos - run Tcl test scripts with a DOS TCL.EXE under DOSBox-X
 
 =head1 SYNOPSIS
 
-  tests/run-dos [-e ERR2OUT.EXE] TCL.EXE DIR...
+  tests/run-dos [-e ERR2OUT.EXE] [-f FILE]... TCL.EXE DIR...
 
 =head1 DESCRIPTION
 
@@ -30,7 +30,8 @@ is turned into LF. Comment lines at the top of the script can say:
   # host: skip       (tests/run-host only) not run with the host build
 
 Any other file in DIR is a fixture, copied into the work directory
-under its name in upper case.
+under its name in upper case, as is each FILE given with C<-f> (a test
+tool, such as F<CHILD.EXE> for the exec cases).
 
 A C<# command:> line may redirect standard input from a fixture
 (C<# command: -i E<lt>REPL.IN>); the harness adds C<E<gt>NAME.OUT>.
@@ -55,10 +56,14 @@ Adapted from gr-dos/perl16's tests/run-dos.
 
 =cut
 
-my $err2out;
-(undef, $err2out) = splice @ARGV, 0, 2 if @ARGV >= 2 && $ARGV[0] eq '-e';
+my ($err2out, @extra);
+while (@ARGV >= 2 && $ARGV[0] =~ /^-[ef]$/) {
+    my ($opt, $val) = splice @ARGV, 0, 2;
+    if ($opt eq '-e') { $err2out = $val } else { push @extra, $val }
+}
 my ($exe, @dirs) = @ARGV;
-die "usage: $0 [-e ERR2OUT.EXE] TCL.EXE DIR...\n" unless @dirs;
+die "usage: $0 [-e ERR2OUT.EXE] [-f FILE]... TCL.EXE DIR...\n" unless @dirs;
+-f $_ or die "$_ not found\n" for @extra;
 die "$exe not found\n" unless -f $exe;
 die "$err2out not found\n" if defined $err2out && !-f $err2out;
 my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
@@ -101,6 +106,12 @@ for my $dir (@dirs) {
     }
 }
 die "no cases\n" unless @cases;
+
+for my $f (@extra) {
+    my $name = uc basename($f);
+    die "$f: $name is used twice\n" if $seen{$name}++;
+    copy($f, "$work/$name") or die "copy $f: $!\n";
+}
 
 for my $dir (@dirs) {
     for my $f (grep { -f && !/\.(tcl|out)$/ } glob "$dir/*") {

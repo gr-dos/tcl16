@@ -34,10 +34,21 @@ crashed, hung or exited; one where DOSBox-X logged a write to ROM
 corrupted memory.
 
 The work directory, OUT/NAME/T for each file (OUT/NAME is drive C:), holds TCL.EXE, every file of
-TESTSDIR, made LF text with no DOS end-of-file byte (^Z), and the port's
-UNIX-like utilities from UTILDIR (F<cat>,
-F<wc>, F<whoami>, F<pwd>, F<printenv>), which F<exec.tst> runs. They are
-part of the fetched archive and are not redistributed.
+TESTSDIR, made LF text with no DOS end-of-file byte (^Z), and the
+UNIX-like utilities from UTILDIR, which the tests run with exec: the
+port's (F<cat>, F<wc>, F<whoami>, F<pwd>, F<printenv>; part of the
+fetched archive and not redistributed) for C<make test-suite-tcl67>,
+Tcl16's own (F<tests/tools/cat.c>, F<wc.c>, F<pwd.c>) for C<make
+test-suite>.
+
+F<cd.tst>, F<file.tst> and F<glob.tst> make their fixtures with C<exec
+mkdir>, C<exec rmdir> and C<exec del> of several names and of paths with
+"/", which COMMAND.COM's own commands cannot do (they take one name, and
+read "/" as a switch). For those three files F<W.TCL> first replaces
+C<exec> with a procedure that does C<mkdir> with C<file mkdir>, and
+C<rmdir> and C<del> with C<file delete>, ignoring its errors as
+COMMAND.COM's status would be ignored (F<file.tst> removes a directory
+it has not emptied), and runs anything else with the real C<exec>.
 
 Writes OUT/report.txt: for each file, the failed tests, or C<crashed>,
 C<rom-write> or C<error: ...>. With BASELINE, a file of lines C<FILE
@@ -92,6 +103,20 @@ sub start ($file) {
     }
     open my $t, '>:raw', "$w/W.TCL";
     print $t map { "$_\r\n" }
+        ($name =~ /^(cd|file|glob)$/ ? (
+            'rename exec tcl16_exec',
+            'proc exec args {',
+            '    set c [string tolower [lindex $args 0]]',
+            '    if {$c == "mkdir"} {',
+            '        foreach d [lrange $args 1 end] {file mkdir $d}',
+            '        return ""',
+            '    }',
+            '    if {$c == "rmdir" || $c == "del"} {',
+            '        foreach d [lrange $args 1 end] {catch {file delete $d}}',
+            '        return ""',
+            '    }',
+            '    uplevel tcl16_exec $args',
+            '}') : ()),
         'set f [lindex $argv 0]',
         'if [catch {source $f} m] {puts stdout "@@error $m"}',
         'puts stdout "@@done"';

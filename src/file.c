@@ -13,15 +13,19 @@
  *   file mkdir DIR ?DIR ...?
  *   file rename ?-force? ?--? SOURCE TARGET
  *
+ *   file executable NAME   1 for a directory, or a file whose name ends
+ *                          in .COM, .EXE or .BAT: what DOS can run (DOS
+ *                          has no execute permission)
+ *
  * delete, mkdir and rename are Tcl16 extensions, with the syntax Tcl 7.6
  * later gave them, as far as DOS permits (below). The other options
- * (atime, executable, exists, isdirectory, isfile, lstat, mtime, owned,
- * readable, size, stat, type, writable) are Tiny Tcl's, which
+ * (atime, exists, isdirectory, isfile, lstat, mtime, owned, readable,
+ * size, stat, type, writable) are Tiny Tcl's, which
  * patches/0011-dos-file.patch renames TclDosFileCmd.
  *
- * Options may be abbreviated, as in Tcl 6.7, to as few letters as tell
- * them apart: "d" and "m" no longer do, since delete and mkdir were
- * added.
+ * Options may be abbreviated, as in Tcl 6.7. Every abbreviation Tcl 6.7
+ * took keeps its meaning, so "d" is still dirname and "m" mtime; the
+ * new options need "de", "mk" and "ren".
  */
 
 #include "tclInt.h"
@@ -469,6 +473,8 @@ FileRename(Tcl_Interp *interp, int argc, char **argv)
  *
  *	The "file" command. Its options, with the fewest letters that
  *	select each; an abbreviation shorter than that is a bad option.
+ *	The first option in the table that an abbreviation selects wins:
+ *	"d" is dirname, as in Tcl 6.7.
  *
  *----------------------------------------------------------------------
  */
@@ -480,6 +486,7 @@ FileRename(Tcl_Interp *interp, int argc, char **argv)
 #define OWN_DELETE	5
 #define OWN_MKDIR	6
 #define OWN_RENAME	7
+#define OWN_EXECUTABLE	8
 
 static struct {
     char *name;
@@ -488,15 +495,15 @@ static struct {
 } options[] = {
     {"atime",		1,	0},
     {"delete",		2,	OWN_DELETE},
-    {"dirname",		2,	OWN_DIRNAME},
-    {"executable",	3,	0},
+    {"dirname",		1,	OWN_DIRNAME},
+    {"executable",	3,	OWN_EXECUTABLE},
     {"exists",		3,	0},
     {"extension",	3,	OWN_EXTENSION},
     {"isdirectory",	3,	0},
     {"isfile",		3,	0},
     {"lstat",		1,	0},
     {"mkdir",		2,	OWN_MKDIR},
-    {"mtime",		2,	0},
+    {"mtime",		1,	0},
     {"owned",		1,	0},
     {"readable",	5,	0},
     {"rename",		3,	OWN_RENAME},
@@ -582,6 +589,16 @@ Tcl_FileCmd(dummy, interp, argc, argv)
 	    Tcl_SetResult(interp, p, TCL_VOLATILE);
 	}
 	break;
+    case OWN_EXECUTABLE: {
+	struct stat st;
+
+	p = Extension(name);
+	interp->result = (stat(name, &st) == 0 && (S_ISDIR(st.st_mode)
+		|| (p != NULL && (stricmp(p, ".COM") == 0
+		|| stricmp(p, ".EXE") == 0 || stricmp(p, ".BAT") == 0))))
+		? "1" : "0";
+	break;
+    }
     }
     return TCL_OK;
 }

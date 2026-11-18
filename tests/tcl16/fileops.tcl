@@ -23,5 +23,7 @@ puts [file exists NEWDIR]
 file mkdir E
 file delete -- E
 puts [file exists E]
+puts [file executable CHILD.EXE][file executable T.BAT][file executable .]
+puts [file executable FILEOPS.TCL][file executable NOSUCH.EXE]
 puts [catch {file mkdir} m]:$m
 puts [catch {file delete} m]:$m

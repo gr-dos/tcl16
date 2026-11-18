@@ -15,7 +15,7 @@ DIR\NAME.TAR
 
 
 A
-1:bad option "d": should be atime, delete, dirname, executable, exists, extension, isdirectory, isfile, lstat, mkdir, mtime, owned, readable, rename, rootname, size, stat, tail, type, or writable
-1
+1:couldn't stat "NOSUCH": No such file or directory
+1:bad option "re": should be atime, delete, dirname, executable, exists, extension, isdirectory, isfile, lstat, mkdir, mtime, owned, readable, rename, rootname, size, stat, tail, type, or writable
 1:wrong # args: should be "file dirname name"
 1:wrong # args: should be "file option name ?arg ...?"

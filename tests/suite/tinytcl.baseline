@@ -1,14 +1,52 @@
-# Tcl 6.7's own test suite with Tiny Tcl 6.8.1 (make test-suite;
+# Tcl 6.7's own test suite with TCL.EXE (make test-suite;
 # scripts/run-tcl-suite): the failures expected, as "FILE TEST..." lines,
-# "stopped" for a file that does not finish. docs/M2-REPORT.md, section 8.
+# "stopped" for a file that does not finish. Since M5 every file runs
+# with exec. Each entry is a DOS deviation (docs/COMPATIBILITY.md),
+# something Tiny Tcl leaves out (docs/DESIGN.md, section 7), or debt with
+# the milestone it is due in (DESIGN.md, section 10.1).
 #
-# These files make their fixtures with exec (cat, pwd, mkdir) at the top
-# level, and Tiny Tcl has no exec command (docs/M1-REPORT.md, section
-# 3.2), so the file stops at its first fixture.
-cd stopped
-exec stopped
-file stopped
-glob stopped
-info stopped
+# The tests are the Tcl 6.7 DOS port's copies, partly adapted to that
+# port (del for rm, its UTIL programs); Tcl16's CAT, WC and PWD stand in
+# for those programs (tests/tools/).
+
+# pwd gives DOS's "\" (tests/tinytcl/pwdsep); the expected results come
+# from PWD.EXE, which writes "/".
+cd cd-1.1 cd-2.2 cd-2.5
+# DOS reports a path through a file as missing (ENOENT); it has no
+# ENOTDIR.
+cd cd-4.3
+# Tiny Tcl does not expand "~" (DOS has no home directories), so cd with
+# no argument and glob of "~..." do not read HOME.
+cd cd-4.4
+glob glob-5.6 glob-5.7
+
+# exec-7.3 runs Unix's sleep and sh. exec-9.1 uses time, which Tiny Tcl
+# does not have; that error is outside any catch, so the file stops there
+# and exec-9.2 and exec-10.x do not run (tests/tcl16/exec covers them).
+exec exec-7.3 stopped
+
+# DOS has no execute permission (file executable is true for a directory
+# and a .COM, .EXE or .BAT file), no owners and no read permission. The
+# port commented out the tests' chmod calls but kept their results.
+file file-4.2 file-7.2 file-8.2 file-9.1 file-10.2
+# DOS keeps file times to 2 seconds, and the port's test no longer
+# sleeps.
+file file-11.2
+# puts ends a line with CR LF on DOS: one byte more.
+file file-11.3
+# The message lists Tcl16's delete, mkdir and rename, and says rootname
+# where Tcl 6.7 said "root".
+file file-15.4 file-15.5 file-15.6 file-15.7 file-15.8 file-15.9 file-15.10
+
+# glob returns names as DOS stores them, in upper case; the tests made
+# their files in lower case. In glob-3.4 and glob-3.5 the port also
+# expected its DOS wildcards ("*" not matching x.1, ".*" matching it);
+# Tcl16's "*" and ".*" match whole names, as Tcl's do.
+glob glob-3.1 glob-3.2 glob-3.3 glob-3.4 glob-3.5 glob-3.6 glob-3.7 glob-5.5
+# DOS has no permission to deny reading a directory.
+glob glob-6.1
+
+# Debt, due when libc16 has them (M7 at the latest): libc16's fopen has
+# no update modes (r+, w+, a+), so open-1.5 fails outside any catch and
+# the file stops there.
 open stopped
-source stopped

@@ -55,7 +55,7 @@ TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
 # tcl16's own, in src/: the command line, the stack guard and the DOS
 # layer. probe.c (m1probe) is only in the measurement builds
 # (scripts/build-variant), never in TCL.EXE.
-T16_NAMES   = main stack dostext source scan dosdir dosenv file glob
+T16_NAMES   = main stack dostext source scan dosdir dosenv file glob exec
 
 # Development build: large model, 8086 instructions, as a consumer of
 # libc16 and libkitchen16 builds (their docs/ABI.md, "Consumer build"):
@@ -141,9 +141,33 @@ $(DEV)/ERR2OUT.EXE: tests/tools/err2out.c $(TOOLS_ENV)
 	  -fo=$(DEV)/err2out.obj $< && \
 	  wlink option quiet system dos name $@ file $(DEV)/err2out.obj
 
-test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE
-	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE $(DEV)/TCL.EXE tests/lang \
-	  tests/dos tests/tinytcl tests/tcl16
+# Test tools built with libc16 in the small model, never published:
+# CHILD.EXE, the program the exec cases run (tests/tools/child.c), and
+# CAT.EXE, WC.EXE and PWD.EXE, which Tcl 6.7's suite runs
+# (tests/tools/cat.c, wc.c, pwd.c; make test-suite).
+TOOL_CFLAGS = -q -zq -zl -zld -x -ms -0 -s -bt=dos -I$(LIBC16_DIR)/include
+TOOL_LINK   = wlink option quiet, nodefaultlibs format dos
+SUITE_UTIL  = $(DEV)/suite
+
+$(DEV)/CHILD.EXE: tests/tools/child.c $(LIBC16L) $(TOOLS_ENV)
+	mkdir -p $(DEV)
+	$(WATCOM_ENV) && $(CC) $(TOOL_CFLAGS) -fo=$(DEV)/child.obj $< && \
+	  $(TOOL_LINK) name $@ file $(DEV)/child.obj \
+	  library $(LIBC16_DIR)/lib/LIBC16.LIB
+
+$(SUITE_UTIL)/.stamp: tests/tools/cat.c tests/tools/wc.c tests/tools/pwd.c \
+  $(LIBC16L) $(TOOLS_ENV)
+	mkdir -p $(SUITE_UTIL)
+	$(WATCOM_ENV) && for t in cat wc pwd; do \
+	  $(CC) $(TOOL_CFLAGS) -fo=$(SUITE_UTIL)/$$t.obj tests/tools/$$t.c && \
+	  $(TOOL_LINK) name $(SUITE_UTIL)/$$(echo $$t | tr a-z A-Z).EXE \
+	    file $(SUITE_UTIL)/$$t.obj \
+	    library $(LIBC16_DIR)/lib/LIBC16.LIB || exit 1; done
+	touch $@
+
+test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE
+	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE -f $(DEV)/CHILD.EXE \
+	  $(DEV)/TCL.EXE tests/lang tests/dos tests/tinytcl tests/tcl16
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
@@ -227,9 +251,9 @@ test-suite-tcl67: $(T67_DEV)/TCL.EXE
 	perl scripts/run-tcl-suite $(T67_DEV)/TCL.EXE $(T67)/port/TESTS \
 	  $(T67)/port/UTIL $(T67)/suite tests/suite/tcl67.baseline
 
-test-suite: $(DEV)/TCL.EXE $(T67)/.fetched
+test-suite: $(DEV)/TCL.EXE $(SUITE_UTIL)/.stamp $(T67)/.fetched
 	perl scripts/run-tcl-suite $(DEV)/TCL.EXE $(T67)/port/TESTS \
-	  $(T67)/port/UTIL build/suite tests/suite/tinytcl.baseline
+	  $(SUITE_UTIL) build/suite tests/suite/tinytcl.baseline
 
 libc16-try-tcl67: $(T67_SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 	$(WATCOM_ENV) && TRY_DEFS=-DTCL16_TCL67 sh scripts/try-libc16 \

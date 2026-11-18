@@ -1,0 +1,52 @@
+hello
+[a]
+[b c]
+["q"]
+[]
+[x\y]
+ext
+drive
+dot
+1::CHILDSTATUS 0 3
+1:out
+1:oops
+1:a
+b
+1:couldn't find "NOSUCH" to execute:CHILDSTATUS 0 1
+1:a
+couldn't find "NOSUCH" to execute
+line 1
+line 2
+piped
+x
+y
+first
+second
+first
+second
+a
+b
+a
+b
+<>
+direct
+
+tofile
+[a]
+[&b]
+fromtcl
+(null)
+hi there
+batch one
+batch two
+1:didn't specify command to execute
+1:illegal use of | in command
+1:illegal use of | in command
+1:illegal use of | in command
+1:can't specify "<" as last word in command
+1:can't specify ">>" as last word in command
+1:couldn't read file "NOSUCH.TXT": No such file or directory:UNIX ENOENT {No such file or directory}
+1:couldn't write file "NODIR\X.TXT": No such file or directory
+1:can't run a command in the background ("&") on DOS
+1:couldn't execute "CHILD": Arg list too long
+1

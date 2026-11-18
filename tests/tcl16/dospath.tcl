@@ -17,9 +17,10 @@ puts [file extension C:NAME.TXT]
 puts [file rootname {DIR\NAME.TAR.GZ}]
 puts [file extension {.\X}]
 puts [file tail C:\\]
-# Abbreviations: "d" and "m" no longer select dirname and mtime.
-puts [file di {A\B}]
-puts [catch {file d x} m]:$m
-puts [catch {file m x} m]
+# Abbreviations: "d" and "m" are still dirname and mtime, as in Tcl 6.7;
+# delete, mkdir and rename need "de", "mk" and "ren".
+puts [file d {A\B}]
+puts [catch {file m NOSUCH} m]:$m
+puts [catch {file re x} m]:$m
 puts [catch {file dirname} m]:$m
 puts [catch {file size} m]:$m
