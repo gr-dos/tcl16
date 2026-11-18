@@ -17,9 +17,11 @@
 # src/dostext.c, src/source.c; docs/COMPATIBILITY.md).
 #
 # build/dev/TCL.EXE is the development build: large model, 8086
-# instructions, linked with Open Watcom's C runtime, because libc16 does
-# not yet provide what the interpreter needs (make libc16-try;
-# docs/DESIGN.md, section 4.2). It is not a release.
+# instructions, linked with libc16 and libkitchen16 (formatted output,
+# strtod and software floating point) since M5, with no Open Watcom
+# runtime code (docs/DESIGN.md, section 4.2). It is not a release. The
+# M2 reference build and the measurement variants still link Open
+# Watcom's runtime.
 #
 # The Open Watcom toolchain is the snapshot pinned by libc16, fetched by
 # the libc16 tree's tools/fetch-watcom into build/tools, as in the other
@@ -35,6 +37,9 @@ DEV         := build/dev
 LIBC16_ROOT ?= build/libc16
 LIBC16_DIR  := $(if $(wildcard $(LIBC16_ROOT)/build/stage/VERSION),$(LIBC16_ROOT)/build/stage,$(LIBC16_ROOT))
 LIBC16L     := $(LIBC16_DIR)/lib/LIBC16L.LIB
+LIBK16_ROOT ?= build/libkitchen16
+LIBK16_DIR  := $(if $(wildcard $(LIBK16_ROOT)/build/stage/VERSION),$(LIBK16_ROOT)/build/stage,$(LIBK16_ROOT))
+LIBK16L     := $(LIBK16_DIR)/lib/LIBK16L.LIB
 TOOLS_ENV   := build/tools.env
 WATCOM_ENV   = . ./$(TOOLS_ENV) && PATH=$$WATCOM/binl64:$$PATH
 
@@ -49,34 +54,45 @@ TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
 # tcl16's own, in src/: the command line, the stack guard and the DOS
 # layer. probe.c (m1probe) is only in the measurement builds
 # (scripts/build-variant), never in TCL.EXE.
-T16_NAMES   = main stack dostext source
+T16_NAMES   = main stack dostext source scan dosdir dosenv
 
-# Development build: large model, 8086 instructions, Open Watcom's
-# headers and runtime, stack checking on. -zc puts string literals in the
-# code segment, out of DGROUP, which in the large model also holds the
-# stack (M1-REPORT, section 7).
+# Development build: large model, 8086 instructions, as a consumer of
+# libc16 and libkitchen16 builds (their docs/ABI.md, "Consumer build"):
+# only their headers (libkitchen16's first), no default libraries, no
+# stack checks (libc16 has no stack-check routine; src/stack.c guards
+# Tcl_Eval), and floating point as calls to libkitchen16 (-fpc), so no
+# 8087 is needed. -zc puts string literals in the code segment, out of
+# DGROUP, which in the large model also holds the stack (M1-REPORT,
+# section 7). src/ comes before the assembled sources for dosdir.h.
 CC          = wcc
 OPT        ?= -os
 STACK      ?= 48k
-DEV_CFLAGS  = -q -zq -ml -0 -zc $(OPT) -bt=dos -DTCL16_STACKAVAIL \
-              -I$(SRC) \
-              -I$$WATCOM/h
-DEV_LDOPTS  = option quiet, stack=$(STACK)
+DEV_CFLAGS  = -q -zq -zl -zld -x -ml -0 -zc -s -fpc $(OPT) -bt=dos \
+              -DTCL16_LIBC16 -Isrc -I$(SRC) -I$(LIBK16_DIR)/include \
+              -I$(LIBC16_DIR)/include
+DEV_LDOPTS  = option quiet, nodefaultlibs, stack=$(STACK)
+DEV_LIBS    = library $(LIBK16L) library $(LIBC16L)
+
+# The M2 reference build: Open Watcom's headers and runtime, with its
+# stack checks.
+OW_CFLAGS   = -q -zq -ml -0 -zc $(OPT) -bt=dos -DTCL16_STACKAVAIL \
+              -I$(SRC) -I$$WATCOM/h
+OW_LDOPTS   = option quiet, stack=$(STACK)
 
 DEV_OBJS    = $(TCL_NAMES:%=$(DEV)/%.obj) $(T16_NAMES:%=$(DEV)/%.obj)
 PATCHES     = $(sort $(wildcard patches/*.patch))
 
 all: $(DEV)/TCL.EXE
 
-$(DEV)/TCL.EXE: $(DEV_OBJS) $(TOOLS_ENV)
+$(DEV)/TCL.EXE: $(DEV_OBJS) $(LIBK16L) $(TOOLS_ENV)
 	$(WATCOM_ENV) && wlink $(DEV_LDOPTS), map=$(DEV)/tcl.map \
-	  system dos name $@ $(DEV_OBJS:%=file %)
+	  format dos name $@ $(DEV_OBJS:%=file %) $(DEV_LIBS)
 
-$(DEV)/%.obj: $(SRC)/%.c $(SRC)/.stamp $(TOOLS_ENV)
+$(DEV)/%.obj: $(SRC)/%.c $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
 	mkdir -p $(DEV)
 	$(WATCOM_ENV) && $(CC) $(DEV_CFLAGS) -fo=$@ $<
 
-$(DEV)/%.obj: src/%.c $(SRC)/.stamp $(TOOLS_ENV)
+$(DEV)/%.obj: src/%.c src/tcl16.h $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
 	mkdir -p $(DEV)
 	$(WATCOM_ENV) && $(CC) $(DEV_CFLAGS) -fo=$@ $<
 
@@ -102,6 +118,13 @@ $(LIBC16L): scripts/fetch-libc16
 	sh scripts/fetch-libc16 $(LIBC16_ROOT)
 endif
 
+# The pinned libkitchen16 release (scripts/fetch-libkitchen16). A
+# LIBK16_ROOT given on the command line must already be built.
+ifeq ($(LIBK16_ROOT),build/libkitchen16)
+$(LIBK16L): scripts/fetch-libkitchen16
+	sh scripts/fetch-libkitchen16 $(LIBK16_ROOT)
+endif
+
 # The Open Watcom snapshot libc16 names, as shell assignments.
 $(TOOLS_ENV): $(LIBC16L)
 	mkdir -p build
@@ -125,7 +148,7 @@ test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
 host: build/host/tclhost
 
-build/host/tclhost: $(SRC)/.stamp src/main.c src/stack.c src/dostext.c \
+build/host/tclhost: $(SRC)/.stamp src/main.c src/stack.c src/dostext.c src/scan.c \
   src/source.c src/tcl16.h scripts/build-host
 	sh scripts/build-host $(SRC) build/host
 
@@ -159,7 +182,7 @@ T67_NAMES   = msdos tclUnixAZ tclUnixStr tclUnixUtil tclGlob tclEnv panic \
               tclAssem tclBasic tclCkalloc tclCmdAH tclCmdIL tclCmdMZ \
               tclExpr tclGet tclHash tclHistory tclParse tclProc regexp \
               tclUtil tclVar
-T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(DEV_CFLAGS)) -DTCL16_TCL67 \
+T67_CFLAGS  = $(subst -I$(SRC),-I$(T67_SRC),$(OW_CFLAGS)) -DTCL16_TCL67 \
               -DTCL16_PROBE
 # Its driver is the M1/M2 test driver, frozen as src/tcl67main.c; Tcl16's
 # DOS layer (src/dostext.c, src/source.c) and command line are not built.
@@ -173,7 +196,7 @@ $(T67)/.fetched: scripts/fetch-tcl67
 	sh scripts/fetch-tcl67 $(T67)
 
 $(T67_DEV)/TCL.EXE: $(T67_OBJS) $(TOOLS_ENV)
-	$(WATCOM_ENV) && wlink $(DEV_LDOPTS), map=$(T67_DEV)/tcl.map \
+	$(WATCOM_ENV) && wlink $(OW_LDOPTS), map=$(T67_DEV)/tcl.map \
 	  system dos name $@ $(T67_OBJS:%=file %)
 
 $(T67_DEV)/%.obj: $(T67_SRC)/%.c $(T67_SRC)/.stamp $(TOOLS_ENV)
@@ -247,7 +270,7 @@ Usage: make [TARGET] [VARIABLE=value ...]
 
 Build
   make, make all      build/dev/TCL.EXE, the development build (large
-                      model, 8086, Open Watcom's C runtime; not a release)
+                      model, 8086, libc16 and libkitchen16; not a release)
   make host           build/host/tclhost, Tiny Tcl for Linux (gcc -m32), as
                       a 32-bit-int reference for the tests
   make clean          remove build products; keep downloads and tools
@@ -285,6 +308,8 @@ M2: the Tcl 6.7 DOS port (docs/M2-REPORT.md), fetched into build/tcl67
 Variables
   LIBC16_ROOT=DIR     libc16 to use (default build/libc16, the pinned
                       release; or a checkout built with its own make)
+  LIBK16_ROOT=DIR     libkitchen16 to use (default build/libkitchen16, the
+                      pinned release; or a built checkout)
   OPT=FLAGS           wcc optimisation flags of build/dev (default -os)
   STACK=SIZE          stack size of build/dev/TCL.EXE (default 48k;
                       docs/DESIGN.md, section 12)

@@ -8,10 +8,13 @@
  * sprintf and strtod; it is measured by tests/dos/deep.tcl and
  * scripts/measure.
  *
- * The development build asks Open Watcom's runtime (stackavail, with
- * TCL16_STACKAVAIL defined). Elsewhere (the host build, the libc16
- * experiment) there is no guard yet: libc16 has no stackavail, and the
- * host's stack is large.
+ * TCL.EXE, linked with libc16 (TCL16_LIBC16 defined), measures the stack
+ * itself: libc16's startup puts the stack at the end of DGROUP, after
+ * BSS, with SS = DGROUP, so what is left is SP less the end of BSS
+ * (wlink's _end; libc16's docs/spec/startup.md). The measurement builds,
+ * linked with Open Watcom's runtime, ask it (stackavail, with
+ * TCL16_STACKAVAIL defined). The host build has no guard: its stack is
+ * large.
  */
 
 #include "tclInt.h"
@@ -20,7 +23,22 @@
 #define TCL16_STACK_MARGIN 3072
 #endif
 
-#ifdef TCL16_STACKAVAIL
+#if defined(TCL16_LIBC16)
+#include <dos.h>
+
+extern char __cdecl end[];	/* The end of BSS: the stack's bottom. */
+
+static unsigned GetSP(void);
+#pragma aux GetSP = "mov ax,sp" value [ax] modify exact [ax];
+
+int
+TclStackExhausted(void)
+{
+    char __far *bottom = end;
+
+    return GetSP() - FP_OFF(bottom) < TCL16_STACK_MARGIN;
+}
+#elif defined(TCL16_STACKAVAIL)
 #include <malloc.h>
 
 int

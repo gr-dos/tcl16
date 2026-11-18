@@ -28,7 +28,8 @@ top=$(cd "$(dirname "$0")/.." && pwd)
 rm -rf "$out"
 mkdir -p "$out/hinc" "$out/c"
 cp "$src"/*.c "$src"/*.h "$top/src/main.c" "$top/src/stack.c" \
-  "$top/src/dostext.c" "$top/src/source.c" "$top/src/tcl16.h" "$out/c/"
+  "$top/src/dostext.c" "$top/src/source.c" "$top/src/scan.c" \
+  "$top/src/tcl16.h" "$out/c/"
 printf 'extern char **environ;\n' > "$out/hinc/dos.h"
 printf '#include <unistd.h>\n' > "$out/hinc/io.h"
 printf '#include <unistd.h>\n' > "$out/hinc/direct.h"
@@ -40,7 +41,7 @@ cd "$out/c"
 for m in tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash tclParse \
          panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
          tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir main \
-         stack dostext source; do
+         stack dostext source scan; do
   gcc -m32 -std=gnu89 -w -O1 -g -I../hinc -DO_BINARY=0 -c "$m.c" -o "$m.o"
 done
 gcc -m32 -o ../tclhost *.o -lm
