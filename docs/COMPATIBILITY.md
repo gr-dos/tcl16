@@ -23,6 +23,7 @@ Its 60 commands (M1-REPORT.md, section 3.2):
 - **I/O (14):** `cd close eof exit file flush gets open puts pwd read
   seek source tell`
 - **TclX 6 (4):** `cmdtrace infox loop readdir`
+- **Processes (1):** `exec`, from M5 (section 6)
 
 The tests in `tests/lang` run the same on DOS and with Tiny Tcl built for
 a 32-bit host (`make test-host`); Tcl 6.7's own test suite runs against
@@ -35,17 +36,17 @@ These need changes (M1-REPORT.md, section 9; `tests/lang`):
 - `expr` takes exactly one argument. Brace it: `expr {$a + 1}`.
 - There are no math functions (`int()`, `sqrt()`…). Integer division
   truncates toward zero (`-7/2` is -3), as C does.
-- There are no `\x` or `\u` escapes, and no `switch`, `time`, `exec`,
-  `pid`, `history`, `clock`, `file delete`, `file mkdir`, `namespace`,
-  `dict` or `lassign`. `case` takes the place of `switch`. A command
-  name containing `::` is just a name: there are no namespaces.
+- There are no `\x` or `\u` escapes, and no `switch`, `time`, `pid`,
+  `history`, `clock`, `file copy`, `namespace`, `dict` or `lassign`.
+  `case` takes the place of `switch`. A command name containing `::` is
+  just a name: there are no namespaces.
 - `string range` and `lrange` report errors in their own words.
 - `return`, `break` and `continue` at the top level of a script behave
   as in Tcl 6.7: `return` ends the script; `break` and `continue` are
   errors (`tests/tcl16/topbreak`).
 
-`exec` and `file delete`/`mkdir`/`rename` are planned for M5
-(DESIGN.md, section 11).
+`exec` (section 6) and `file delete`, `mkdir` and `rename` (section 5)
+are Tcl16 additions from M5, with the syntax Tcl 7 gave them.
 
 ## 2. Real-mode limits
 
@@ -60,7 +61,7 @@ object can be larger than a 64 KB segment.
 | All the words of one command, after substitution | 32,767 bytes | `tests/lang/bigdata` |
 | One command in a script, including a `proc` body | 32,767 bytes | M1-REPORT.md, 7.4 |
 | A script (`TCL SCRIPT`, `source`) | any size (section 3.2) | `tests/tinytcl/bigsrc`, `tests/tcl16/bigcrlf` |
-| Recursion | 48 KB of stack: about 85 levels of a simple recursive proc, and about 23 when each level recurses inside `expr` (DESIGN.md, section 12) | `tests/dos/deep`, `tests/tcl16/stack`, `replstk` |
+| Recursion | 48 KB of stack: about 84 levels of a simple recursive proc, and about 23 when each level recurses inside `expr` (DESIGN.md, section 12) | `tests/dos/deep`, `tests/tcl16/stack`, `replstk` |
 
 Past a size limit, Tcl16 stops with a message ("tcl16: string or list
 too long", or "tcl16: out of memory") and exit status 255, after
@@ -68,10 +69,13 @@ flushing standard output; it does not corrupt memory. Past the stack
 limit, the command fails with the Tcl error "too many nested calls to
 Tcl_Eval (out of stack)", which `catch` can trap.
 
-Memory: `TCL.EXE` takes about 186 KB of conventional memory at start,
-and needs about 430 KB for the heaviest workload measured
-(M1-REPORT.md, 7.2). Its heap never returns memory to DOS, so `unset`
-frees memory for Tcl's reuse, not for DOS.
+| Open files | 5 at once, besides stdin, stdout and stderr (libc16's 8 streams) | `tests/tcl16/openmax` |
+
+Memory: `TCL.EXE` (libc16 build, M5) takes about 152 KB of conventional
+memory at start, stack included, and about 400 KB after the heaviest
+workload measured (`make measure`). Its heap never returns memory to
+DOS, so `unset` frees memory for Tcl's reuse, not for DOS, and not for a
+program `exec` runs (section 6).
 
 ## 3. DOS text
 
@@ -106,12 +110,13 @@ bytes in such a script is reported as "command too long".
 
 ### 3.3 Files
 
-`open`, `gets`, `read` and `puts` use the C runtime's text mode: `puts`
+`open`, `gets`, `read` and `puts` use libc16's text mode: `puts`
 writes `\n` as CR LF, and `gets` and `read` return LF for CR LF
-(`tests/dos/files`). How they treat ^Z inside a file is not yet
-specified (M5). Error messages from the C library, such as "No such file
-or directory", are Open Watcom's text in the development build and may
-change with libc16 (M7).
+(`tests/dos/files`). `open` takes `r`, `w` and `a`; the update modes
+`r+`, `w+` and `a+` fail with "Invalid argument", because libc16's
+`fopen` does not have them yet (debt, due by M7; `tests/tcl16/openplus`,
+a todo). Error messages from the C library, such as "No such file or
+directory", are libc16's.
 
 ## 4. The `TCL.EXE` command line
 
@@ -189,14 +194,78 @@ COMMAND.COM cannot redirect standard error.
 | 2 | A bad command line: `TCL: unknown option -x` or `TCL: missing argument after -e`, and `Type TCL /? for help.` | `tests/tcl16/badopt`, `emissing` |
 | 255 | Out of memory, or a string or list too long (section 2) | `tests/dos/toolong` |
 
-## 5. Other differences
+## 5. Files and paths
 
-- Tiny Tcl's `putenv` replaces the C library's, so `env` changes will
-  reach child programs once there are any (M5).
-- DOS paths: `pwd` uses `\`; `file dirname`, `tail` and `rootname`
-  split only at `/`, and `glob` matches case-sensitively against the
-  upper-case names DOS stores. Both are known failures due in M5
-  (DESIGN.md, section 10.1; `tests/dos/dospath`, `tests/tinytcl/glob`).
-- Floating point in `expr`, `format` and `scan` uses an 8087 if there
-  is one, and Open Watcom's emulator if not, in the development build.
-  Its future in the libc16 build is open (DESIGN.md, section 12).
+- **Separators.** `/` and `\` both separate path components, and a path
+  may start with a drive, `C:`. `pwd` gives DOS's `\`
+  (`tests/tinytcl/pwdsep`). `file dirname`, `tail`, `rootname` and
+  `extension` split at either separator and keep the drive and root:
+  `file dirname C:\X` is `C:\`, `file tail C:X` is `X`
+  (`tests/tcl16/dospath`).
+- **`glob`** matches without regard to case, as DOS does, and returns
+  names as DOS stores them, in upper case; the parts of a pattern with no
+  wildcard keep the case they were written in. Hidden and system files
+  are not listed, and there is no `~` (`tests/tcl16/globdos`,
+  `tests/tinytcl/glob`).
+- **`file delete ?-force? ?--? NAME...`** deletes files and empty
+  directories; a name that does not exist is not an error. `-force`
+  deletes a directory with what it holds, and read-only files.
+- **`file mkdir NAME...`** creates each directory and the directories
+  above it; an existing directory is not an error, an existing file is.
+- **`file rename ?-force? ?--? SOURCE TARGET`** renames or moves a file
+  or directory; if TARGET is an existing directory, SOURCE moves into
+  it. Without `-force`, an existing target is an error; with it, the
+  target is deleted first (a directory only if empty). It cannot move
+  across drives (libc16's `rename`, `EXDEV`).
+- **`file executable`** is true for a directory, and for a file whose
+  name ends in `.COM`, `.EXE` or `.BAT`: DOS has no execute permission.
+  `file owned` and `readable` are always true, and `writable` is false
+  only for a read-only file.
+
+Tests: `tests/tcl16/fileops`, `dospath`, `globdos`.
+
+## 6. Running programs: `exec`
+
+`exec` takes Tcl 6.7's arguments: the words of a command, `|` and `|&`
+between commands, and the redirections `<`, `<<`, `>`, `>>`, `>&` and
+`>>&`, plus Tcl 7's `<@` and `>@` (`>&@`) with an open file. The result
+is the last command's standard output, then the standard error of all
+of them, with one final newline removed; an error status sets
+`errorCode` to `CHILDSTATUS 0 N` and makes `exec` an error whose
+message is that output, as in Tcl 6.7 (`tests/tcl16/exec`).
+
+On DOS:
+
+- **One program at a time.** DOS runs one program, and waits for it. A
+  pipeline runs its commands in turn, each reading the one before's
+  output from a temporary file (`TCLnnnnn.TMP` in `TEMP`, `TMP` or the
+  current directory). A trailing `&` is an error: "can't run a command
+  in the background ("&") on DOS".
+- **Standard input** is NUL unless redirected, so a program that reads
+  it does not wait for the keyboard.
+- **Finding the program.** As COMMAND.COM does: NAME, NAME.COM,
+  NAME.EXE and NAME.BAT, in the current directory, then in each
+  directory of `env(PATH)`. A program that is not found makes the error
+  `couldn't find "NAME" to execute`.
+- **Batch files and COMMAND.COM's own commands** (`DIR`, `COPY`, `DEL`,
+  `TYPE`, `ECHO` and the others) run through `COMSPEC /C`. Their exit
+  status is not known, and is taken as 0. The command line passed to
+  COMMAND.COM is at most 122 characters.
+- **The command line** of a program is at most 126 characters; a word
+  with blanks is passed in double quotes.
+- **The environment** is `env`, so a change to `env` reaches the
+  program.
+- **Memory.** The program gets the conventional memory above Tcl's
+  heap. Tcl's heap never shrinks, so memory a script used and freed is
+  not given back to DOS for the program. A program that needs more than
+  is left fails with `couldn't execute "NAME": ` and libc16's message
+  for DOS's error. A program run by a script that has just started gets
+  about 431 KB (441,264 bytes) of DOSBox-X's 589 KB (DESIGN.md, section
+  12).
+- **Exit status.** DOS keeps a program's status modulo 256.
+
+## 7. Other differences
+
+- Floating point in `expr`, `format` and `scan` is libkitchen16's
+  software floating point, in every build: it does not use an 8087 even
+  if there is one (DESIGN.md, section 12).
