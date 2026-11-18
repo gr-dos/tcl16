@@ -39,9 +39,11 @@
 void Tcl_InitDebug(Tcl_Interp *interp);
 void TclX_InitGeneral(Tcl_Interp *interp);
 int Tcl_InitReaddir(Tcl_Interp *interp);
-/* Tcl16's exec (exec.c). */
+#ifdef TCL16_LIBC16
+/* Tcl16's exec (exec.c; DOS only: the host build has no exec). */
 int Tcl16_ExecCmd(ClientData dummy, Tcl_Interp *interp, int argc,
     char **argv);
+#endif
 #ifdef TCL16_PROBE
 /* m1probe, the M1 measurement command (probe.c; measurement builds). */
 int Tcl_InitProbe(Tcl_Interp *interp);
@@ -70,8 +72,10 @@ MakeInterp(void)
     Tcl_InitDebug(interp);
     TclX_InitGeneral(interp);
     Tcl_InitReaddir(interp);
+#ifdef TCL16_LIBC16
     Tcl_CreateCommand(interp, "exec", Tcl16_ExecCmd, (ClientData) NULL,
 	    (Tcl_CmdDeleteProc *) NULL);
+#endif
 #ifdef TCL16_PROBE
     Tcl_InitProbe(interp);
 #endif
