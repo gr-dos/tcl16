@@ -1,0 +1,22 @@
+Make Tiny Tcl's "file" command a helper of Tcl16's (src/file.c; docs/DESIGN.md,
+section 8.1).
+
+Tcl16's Tcl_FileCmd handles the options that depend on DOS path syntax
+(dirname, tail, rootname, extension), adds delete, mkdir and rename, and
+passes the others (atime, executable, exists, isdirectory, isfile,
+lstat, mtime, owned, readable, size, stat, type, writable) to Tiny Tcl's,
+renamed TclDosFileCmd. Tiny Tcl's code for the four name options stays,
+unreached.
+
+diff -ru a/tcldosaz.c b/tcldosaz.c
+--- a/tcldosaz.c
++++ b/tcldosaz.c
+@@ -265,7 +265,7 @@
+ 
+ 	/* ARGSUSED */
+ int
+-Tcl_FileCmd(dummy, interp, argc, argv)
++TclDosFileCmd(dummy, interp, argc, argv)	/* tcl16: src/file.c's helper. */
+     ClientData dummy;			/* Not used. */
+     Tcl_Interp *interp;			/* Current interpreter. */
+     int argc;				/* Number of arguments. */

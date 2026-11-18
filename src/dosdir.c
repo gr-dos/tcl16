@@ -5,8 +5,10 @@
  *
  * Tcl16_OpenDir(path) starts a search of "path\*.*" for files and
  * directories; hidden and system files are left out, as DOS's DIR leaves
- * them out. Each search has its own find_t (the DOS search record), so
- * that searches can nest, as glob's do. The names come back as DOS
+ * them out. Tcl16_OpenDirAttr(path, attr) searches with the attributes
+ * attr instead (file delete -force uses TCL16_ALL_ENTRIES). Each search
+ * has its own find_t (the DOS search record), so that searches can nest,
+ * as glob's do. The names come back as DOS
  * stores them, in upper case, "." and ".." included where DOS gives
  * them (not in a root directory).
  *
@@ -41,6 +43,12 @@ struct Tcl16Dir {
 DIR *
 Tcl16_OpenDir(const char *path)
 {
+    return Tcl16_OpenDirAttr(path, _A_SUBDIR);
+}
+
+DIR *
+Tcl16_OpenDirAttr(const char *path, unsigned attr)
+{
     char pattern[DOS_PATH_MAX];
     size_t len = strlen(path);
     DIR *dir;
@@ -64,7 +72,7 @@ Tcl16_OpenDir(const char *path)
 	errno = ENOMEM;
 	return NULL;
     }
-    err = _dos_findfirst(pattern, _A_SUBDIR, &dir->find);
+    err = _dos_findfirst(pattern, attr, &dir->find);
     if (err == 0) {
 	dir->state = STATE_FIRST;
     } else if (err == 18) {		/* No more files: an empty root. */

@@ -45,16 +45,17 @@ WATCOM_ENV   = . ./$(TOOLS_ENV) && PATH=$$WATCOM/binl64:$$PATH
 
 # Tiny Tcl's modules, as upstream's Makefile and tlib.rsp list them, less
 # tinytcl.c (replaced by src/main.c), borland.c (Borland's _stklen; the
-# stack size is a link option here) and dos.c (Borland BIOS and conio
-# commands, left to M5 and M6; M1-REPORT, section 3).
+# stack size is a link option here), dos.c (Borland BIOS and conio
+# commands, left to M6; M1-REPORT, section 3) and tcldosgl.c (glob,
+# replaced by src/glob.c in M5).
 TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
               tclParse panic regexp tclCmdIL tclalloc tclBasic tclExpr \
-              tclUtil tclEnv tcldosaz tcldosut tcldosst tcldosgl tclXdbg \
-              tclXgen readdir
+              tclUtil tclEnv tcldosaz tcldosut tcldosst tclXdbg tclXgen \
+              readdir
 # tcl16's own, in src/: the command line, the stack guard and the DOS
 # layer. probe.c (m1probe) is only in the measurement builds
 # (scripts/build-variant), never in TCL.EXE.
-T16_NAMES   = main stack dostext source scan dosdir dosenv
+T16_NAMES   = main stack dostext source scan dosdir dosenv file glob
 
 # Development build: large model, 8086 instructions, as a consumer of
 # libc16 and libkitchen16 builds (their docs/ABI.md, "Consumer build"):
@@ -157,8 +158,7 @@ test-host: build/host/tclhost
 
 libc16-try: $(SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 	$(WATCOM_ENV) && sh scripts/try-libc16 $(SRC) $(LIBC16_DIR) \
-	  build/libc16-try $(TCL_NAMES:%=$(SRC)/%.c) src/main.c src/stack.c \
-	  src/dostext.c src/source.c
+	  build/libc16-try $(TCL_NAMES:%=$(SRC)/%.c) $(T16_NAMES:%=src/%.c)
 
 # M1 measurements (docs/M1-REPORT.md, section 7): the variants' sizes and
 # the probe scripts' memory, stack and time figures under DOSBox-X.

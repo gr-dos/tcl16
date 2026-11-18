@@ -13,6 +13,15 @@
 
 typedef struct Tcl16Dir DIR;
 
+/*
+ * Tcl16_OpenDir lists files and directories, but not hidden or system
+ * files (as DOS's DIR); Tcl16_OpenDirAttr lists what attr asks for, as
+ * INT 21h 4Eh reads it: TCL16_ALL_ENTRIES for everything but the volume
+ * label.
+ */
+
+#define TCL16_ALL_ENTRIES 0x16	/* _A_SUBDIR | _A_HIDDEN | _A_SYSTEM */
+
 struct dirent {
     char d_name[13];		/* The name, as DOS stores it: 8.3, upper
 				 * case. */
@@ -20,6 +29,7 @@ struct dirent {
 };
 
 extern DIR *		Tcl16_OpenDir(const char *path);
+extern DIR *		Tcl16_OpenDirAttr(const char *path, unsigned attr);
 extern struct dirent *	Tcl16_ReadDir(DIR *dir);
 extern int		Tcl16_CloseDir(DIR *dir);
 

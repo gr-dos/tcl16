@@ -1,0 +1,14 @@
+{gd\A.TCL}
+gd/A.TCL gd/B.TXT gd/SUB
+gd\SUB\C.TCL
+gd\A.TCL gd\B.TXT
+gd\A.TCL gd\B.TXT
+C:gd\B.TXT
+C:\gd\B.TXT
+\gd\SUB
+
+1:no files matched glob pattern "gd\*.xyz"
+gd\nosuch
+gd/sub/C.TCL
+A.TCL B.TXT SUB
+1:unmatched open-brace in file name

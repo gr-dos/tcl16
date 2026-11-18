@@ -55,4 +55,20 @@ extern void	Tcl16_FreeReader(Tcl16Reader *r);
 extern int	Tcl16_ReadLine(Tcl16Reader *r, int max);
 extern int	Tcl16_DosText(char *buf, int length);
 
+/*
+ * DOS paths (file.c): "/" and "\" both separate directories; a path may
+ * start with a drive, "X:".
+ */
+
+#define TCL16_IS_SEP(c)	((c) == '/' || (c) == '\\')
+
+extern int	Tcl16_PathPrefix(const char *name);
+extern char *	Tcl16_PathTail(char *name);
+
+/*
+ * The environment TCL.EXE started with (dosenv.c).
+ */
+
+extern char **	Tcl16_Environ(void);
+
 #endif /* TCL16_H */
