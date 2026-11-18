@@ -6,7 +6,7 @@ with Open Watcom on Linux, for GR-DOS and other DOS kernels. It is not
 compatible with Tcl 7 or Tcl 8. The plan is in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: M4 is done; M5 is next.** There is no release yet.
+**Status: M5 is done; M6 is next.** There is no release yet.
 
 - **M1** evaluated Tiny Tcl 6.8.1:
   [`docs/M1-REPORT.md`](docs/M1-REPORT.md).
@@ -19,15 +19,17 @@ compatible with Tcl 7 or Tcl 8. The plan is in
   The port's DOS layer would have to be rewritten anyway.
 - **M4** built `TCL.EXE`'s command line and REPL, and reads scripts as
   DOS text: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+- **M5** linked `TCL.EXE` with libc16 and libkitchen16 instead of Open
+  Watcom's runtime, and added DOS paths in `file`, case-insensitive
+  `glob`, `file delete`/`mkdir`/`rename` and `exec`.
 
-Today's `TCL.EXE` has Tcl16's command line, but it is still a
-development build: Tiny Tcl with Tcl16's patches and DOS text handling,
-linked with Open Watcom's C runtime rather than libc16. It passes the
-language, DOS and command-line tests on an emulated 8086, apart from
-known failures that are scheduled to be fixed (DESIGN.md, section
-10.1). It has no `exec`, and DOS paths and filename case are not
-handled yet. M5 to M7 build the rest of the DOS layer, GR-DOS
-introspection and the libc16 release build (DESIGN.md, section 11).
+Today's `TCL.EXE` is still a development build: Tiny Tcl with Tcl16's
+patches and DOS layer, linked with libc16 and libkitchen16. It passes
+the language, DOS and command-line tests on an emulated 8086, and Tcl
+6.7's own suite apart from documented DOS deviations, with one known
+failure scheduled to be fixed (`open`'s `r+`, `w+` and `a+`; DESIGN.md,
+section 10.1). M6 and M7 add GR-DOS introspection, validation on real
+DOS kernels and the release (DESIGN.md, section 11).
 The inputs are in [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
 The Tcl 6.7 DOS port is kept only as reference material from M2. Its
@@ -45,7 +47,7 @@ gcc with `-m32` (on Debian or Ubuntu, `gcc-multilib`).
     make test-host      # tests/lang with the host build
     make libc16-try     # build against libc16; report what it lacks
     make measure        # sizes, memory, stack and speed of the M1 variants
-    make test-suite     # Tcl 6.7's own test suite with Tiny Tcl
+    make test-suite     # Tcl 6.7's own test suite with TCL.EXE
     make check-vendor   # check vendor/tinytcl-6.8.1 against its manifest
     make help           # every target and variable
 
@@ -56,8 +58,9 @@ The M2 reference build of the Tcl 6.7 DOS port:
     make test-suite-tcl67   # Tcl 6.7's own test suite with it
     make libc16-try-tcl67 measure-tcl67   # the M2 experiment and measurements
 
-`make` fetches and checks the pinned libc16 release
-(`scripts/fetch-libc16`) and the Open Watcom snapshot it names. Tiny Tcl
+`make` fetches and checks the pinned libc16 and libkitchen16 releases
+(`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`) and the Open
+Watcom snapshot libc16 names. Tiny Tcl
 is vendored, unmodified, in `vendor/tinytcl-6.8.1`; the build assembles
 it with `patches/` in `build/src`. The Tcl 6.7 DOS port is not vendored:
 `make tcl67` and the suite targets fetch it and the Tcl 6.7 release from

@@ -1,7 +1,7 @@
 # Tcl16 Design
 
 **Project:** `gr-dos/tcl16`  
-**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE` complete; M5 next  
+**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE` and M5 DOS integration complete; M6 next  
 **Target:** Real-mode, 16-bit DOS, including GR-DOS and compatible DOS implementations
 
 ## 1. Purpose
@@ -96,23 +96,20 @@ Additional rules:
 
 ### 4.2 The libc16 gap
 
-M1 measured the gap against libc16 0.04 (M1-REPORT.md, section 6). libc16 0.05 and 0.06 (gr-dos/libc16#12, PR #14) closed part of it, and M4 pins 0.07 (`scripts/fetch-libc16`). `make libc16-try` (`build/libc16-try/report.txt`) now finds, for Tiny Tcl with Tcl16's patches and `src/`:
+M1 measured the gap against libc16 0.04 (M1-REPORT.md, section 6). libc16 0.05 to 0.15 closed most of it, and **since M5 `TCL.EXE` links libc16 0.15 and libkitchen16 0.02** (`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`), with no Open Watcom runtime. How each need of M1's list is met:
 
-| Need | Functions | 0.07 | Likely home (to be decided, section 12) |
-| --- | --- | --- | --- |
-| Conversion | `strtol` | **Provided** (0.06) | — |
-| Strings | `strcspn`, `strstr`, `isascii` | **Provided** (0.06) | — |
-| Sorting | `qsort` | **Provided** (0.06); its comparator is `__cdecl` (patch 0007) | — |
-| Files and directories | `fstat`, `fseek`, `ftell`, `getcwd`, `chdir`, `clearerr` | **Provided** (0.05, 0.06) | — |
-| Termination | `abort` | **Provided** (0.06) | — |
-| Formatted output | `sprintf` (in nearly every module), `fprintf` (`tclXdbg`), `vfprintf` (`panic`) | Missing | A compact Tcl16-local formatter (section 5) |
-| Formatted input, floating conversion | `sscanf` (`scan`), `strtod` (`expr`, `Tcl_GetDouble`) | Missing | Depends on the floating-point decision |
-| Floating point | 8087 fixups (`FIxRQQ`/`FJxRQQ`), `__CHP` | Missing | See section 12 |
-| Directories | `opendir`, `readdir`, `closedir` | Missing | A Tcl16-local adapter over libc16's `_dos_findfirst`/`_dos_findnext` (M5) |
-| Environment | `environ` | Missing | Deferred; possibly a heap-free enumerator of the PSP environment |
-| Child processes | `system` and the like | Not needed yet | Tcl16's own `exec` over INT 21h/4Bh (M5) |
+| Need | Functions | Met by |
+| --- | --- | --- |
+| Conversion, strings, sorting, files, termination | `strtol`, `strcspn`, `strstr`, `isascii`, `qsort`, `fstat`, `fseek`, `ftell`, `getcwd`, `chdir`, `clearerr`, `abort` | libc16 (0.05, 0.06); `qsort`'s comparator is `__cdecl` (patch 0007) |
+| Formatted output | `sprintf`, `fprintf`, `vfprintf` | libkitchen16 (section 5) |
+| Floating conversion | `strtod` | libkitchen16 |
+| Floating point | the `-fpc` helper calls | libkitchen16's software floating point (section 12) |
+| Formatted input | `sscanf` (`scan`) | Tcl16's `src/scan.c` (`Tcl16_Sscanf`, patch 0010), the conversions `scan` documents |
+| Directories | `opendir`, `readdir`, `closedir` | Tcl16's `src/dosdir.c`, over libc16's `_dos_findfirst`/`_dos_findnext` |
+| Environment | `environ` | Tcl16's `src/dosenv.c`, from the PSP's environment block, for `tclEnv.c` (patch 0010) |
+| Child processes | `exec` | Tcl16's `src/exec.c`, over libc16's `spawnve` (INT 21h 4B00h) and `libc16_systeme` (`COMSPEC /C`) |
 
-Tcl16's own M4 code (`src/main.c`, `src/dostext.c`, `src/source.c`) needs nothing from that list but `sprintf`. `printf`, `fprintf`, `puts` and `memchr` were avoided on purpose. The headers still lack `<dirent.h>` and `<signal.h>`, which upstream's `tcldos.h` includes. Upstream's own declarations in `tcldos.h` (`chdir`, `access`, `open`…) follow libc16's `__cdecl` declarations, which its headers make first, so those calls link as libc16's. Recheck the actual link failures (`make libc16-try`) rather than this table when the migration starts. M4 does not depend on it: `TCL.EXE` still links Open Watcom's runtime.
+`panic` exits with status 255 itself, since libc16's `abort` exits with 3 (patch 0010). libc16 0.15 still lacks `fopen`'s update modes (`r+`, `w+`, `a+`), which Tiny Tcl's `open` passes through (section 10.1).
 
 The M2 reference build of the Tcl 6.7 DOS port no longer compiles `tclCmdIL.c` against libc16 0.06 or later, for the same `qsort` reason. Tcl16 does not patch it (section 2.2).
 
@@ -123,6 +120,16 @@ Perl16 may require a relatively comprehensive C-style formatting implementation,
 Tiny Tcl has Tcl's `format` command, implemented by passing each field to C's `sprintf`. Its other uses of `sprintf` are a short list of fixed formats (`%d`, `%ld`, `%u`, `%s`, `%g`, `%.150s`). Tcl's script-level `format` is distinct from C's variadic `printf`. The preferred direction is a compact Tcl16-local formatter covering Tiny Tcl's internal formats and the `format` command's conversions. A separately linkable shared formatting engine is acceptable only if measured code size and behaviour show it is better.
 
 Do not make `libkitchen16` mandatory without an explicit benefit demonstrated by testing; do not assume the linker removes unused functionality more granularly than the object-file layout and linker actually permit.
+
+**Settled in M5: libkitchen16.** `TCL.EXE` takes `sprintf`, `vfprintf`, `strtod` and its floating point from libkitchen16 0.02, linked member by member like libc16. The measured benefit (`make measure`, the `os` variant, against M1-REPORT.md, 7.1 and 7.2):
+
+| | Open Watcom runtime (M4) | libc16 and libkitchen16 (M5) |
+| --- | --- | --- |
+| `TCL.EXE` | 139.5 KB | 120.5 KB |
+| Code of the C runtime | 51.6 KB | 22.0 KB |
+| Conventional memory taken at start | 185.9 KB | 152.3 KB |
+
+The Tcl and Tcl16 code grew from 78.7 KB to 92.1 KB in the same time, with M5's `file`, `glob`, `exec` and `scan`. A Tcl16-local formatter would have had to cover `format`'s conversions, floating point included, for no measured gain over libkitchen16's members.
 
 ## 6. User-facing executable
 
@@ -169,16 +176,16 @@ The language is **Tcl 6.7**, as implemented by Tiny Tcl 6.8.1, plus TclX 6's `lo
 | Arrays | High | Present, tested |
 | `eval`, `uplevel`, `upvar` | High | Present, tested |
 | `format` | Desirable; assess footprint | Present, tested; depends on C `sprintf` (section 5) |
-| Floating-point expression operations | Evaluate separately | Present with an 8087 or Open Watcom's emulator; future undecided (section 12) |
-| `exec` and child programs | Required by section 8 | **Missing**; M5 |
-| `file delete`/`mkdir`/`rename` | Desirable | **Missing**; M5 |
+| Floating-point expression operations | Evaluate separately | Present, tested; libkitchen16's software floating point since M5 (section 12) |
+| `exec` and child programs | Required by section 8 | Present since M5, tested (`src/exec.c`; COMPATIBILITY.md, section 6) |
+| `file delete`/`mkdir`/`rename` | Desirable | Present since M5, tested (`src/file.c`; COMPATIBILITY.md, section 5) |
 | `time`, `history`, `pid`, `switch`, namespaces | Not planned for the baseline | Absent from Tiny Tcl; may be added only with a documented reason |
 | Tk or GUI support | Out of scope | — |
 | Dynamic binary extension loading | Out of scope initially | — |
 
 Avoid advertising complete Tcl 6.7 compatibility until each command is verified, and never imply modern Tcl compatibility. Tcl 6.x predates namespaces; names containing `::` do **not** imply namespace support. Scripts written for later Tcl versions meet the differences listed in [COMPATIBILITY.md](COMPATIBILITY.md), which M4 started from M1-REPORT.md, section 9.
 
-Example target script, contingent on case-insensitive `glob` (M5):
+Example target script, which case-insensitive `glob` (M5) makes work:
 
 ```tcl
 set count 0
@@ -287,11 +294,11 @@ Include automated regression tests wherever practical, with manual/emulated DOS 
 
 | Known failure | Cause | Due |
 | --- | --- | --- |
-| `tests/dos/dospath` (todo) | `file dirname`/`tail`/`rootname` split only at `/` | M5 |
-| `tests/tinytcl/glob` (records current behaviour) | `glob` matches case-sensitively against upper-case names | M5 (expected output changes) |
-| `tests/suite/tinytcl.baseline`: `cd`, `exec`, `file`, `glob`, `info`, `open`, `source` stop | No `exec` to build their fixtures | M5, then fix or justify each failure that remains |
+| `tests/tcl16/openplus` (todo); `open` stops in `tests/suite/tinytcl.baseline` | libc16's `fopen` has no update modes (`r+`, `w+`, `a+`) | When libc16 has them; M7 at the latest |
 
 M4 paid off `tests/tinytcl/crlf` (it was todo) and `tests/tinytcl/ctrlz` (which recorded a ^Z run as a command): `source` now reads DOS text.
+
+M5 paid off `tests/dos/dospath` (now `tests/tcl16/dospath`, passing), `tests/tinytcl/glob` (which now expects case-insensitive matches) and the suite's stops for want of `exec`: all of Tcl 6.7's suite runs, and `cd`, `glob`, `info` and `source` finish. The baseline's other entries are DOS deviations, each with its reason in `tests/suite/tinytcl.baseline`, or things Tiny Tcl leaves out (`time`, which stops `exec.tst`).
 
 A milestone that adds a todo or a baseline entry must state why and when it is due. A failure that is truly correct for DOS (for example, no Unix permission bits) moves out of the baseline into a documented DOS deviation in `docs/COMPATIBILITY.md`, with a test that checks the DOS behaviour.
 
@@ -303,8 +310,8 @@ A milestone that adds a todo or a baseline entry must state why and when it is d
 | M2 | Tcl 6.7 DOS port source audit, pinned source, build experiment, and test report | **Done** ([M2-REPORT.md](M2-REPORT.md), PR #2) |
 | M3 | Documented interpreter selection, architecture and supported-language baseline | **Done** ([ADR-001](ADR-001-tcl-implementation.md); this document) |
 | M4 | Interactive and script-mode `TCL.EXE`, CLI and error conventions | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md)) |
-| M5 | DOS filesystem, environment, and process integration | Next |
-| M6 | DOS/GR-DOS introspection using #46 when available | Planned |
+| M5 | DOS filesystem, environment, and process integration | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md), sections 5 and 6) |
+| M6 | DOS/GR-DOS introspection using #46 when available | Next |
 | M7 | 8086, memory, compatibility, packaging, examples, and release validation | Planned |
 
 All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
@@ -319,12 +326,13 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 - libc16 0.07 is pinned and section 4.2 re-measured; patch 0007 gives `lsort`'s comparator libc16's `__cdecl`. `TCL.EXE` still links Open Watcom's runtime.
 - `tests/tcl16` covers the command line, the REPL and DOS text. `tests/run-dos` sees standard error through `ERR2OUT.EXE`.
 
-### M5: DOS filesystem, environment and processes
+### M5: DOS filesystem, environment and processes (done)
 
-- DOS path semantics in the `file` subcommands (clears `tests/dos/dospath`), and case-insensitive `glob`.
-- `file delete`, `mkdir` and `rename`, as far as DOS permits.
-- `exec` over INT 21h/4Bh, as in section 8.1, with memory recovery before a child runs (section 12). Then run the 7 `exec`-dependent files of Tcl 6.7's suite and reduce `tests/suite/tinytcl.baseline` to justified entries.
-- Directory enumeration through a Tcl16-local adapter over libc16, as part of the libc16 migration (section 12).
+- **The libc16 build.** `TCL.EXE` links libc16 0.15 and libkitchen16 0.02 and no Open Watcom runtime (sections 4.2 and 5), with Tcl16's `scan` (`src/scan.c`), directory adapter (`src/dosdir.c`) and environment (`src/dosenv.c`); patch 0010. `make measure` builds its variants the same way.
+- DOS path semantics in `file` (`src/file.c`; patch 0011), clearing `tests/dos/dospath`, and case-insensitive `glob` (`src/glob.c`, replacing `tcldosgl.c`).
+- `file delete`, `mkdir` and `rename`, with Tcl 7's syntax, and `file executable` for what DOS can run.
+- `exec` (`src/exec.c`), as in section 8.1: programs through `spawnve`, batch files and COMMAND.COM's own commands through `COMSPEC /C`, pipes through temporary files, standard input from NUL. Memory recovery is a documented limit (section 12).
+- All of Tcl 6.7's suite runs, with Tcl16's own `CAT`, `WC` and `PWD` (`tests/tools`), and `tests/suite/tinytcl.baseline` holds only justified entries.
 
 ### M6: DOS and GR-DOS introspection
 
@@ -343,18 +351,21 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 
 **Settled in M3:** the interpreter (Tiny Tcl 6.8.1; ADR-001), the language level (Tcl 6.7 with TclX's extras), and the component boundaries (section 4).
 
+**Settled in M5:**
+
+- **Conventional-memory recovery: a documented limit.** A child gets the memory above `TCL.EXE`'s heap, which never shrinks. Measured on DOSBox-X (589 KB free before Tcl): `TCL.EXE` takes 152 KB at start, so a program run by a script that has just started gets 431 KB (441,264 bytes, `CHILD.EXE -m`); after the heaviest workload measured, 400 KB taken, about 189 KB is left. libc16 already leaves DOS everything above the heap's highest point (`TCL.EXE` takes 152 KB at start, not all memory), so shrinking the memory block before INT 21h/4Bh would gain nothing; only memory freed inside the heap is lost to a child, and getting it back would mean swapping the heap to disk or EMS, which is not worth its code for the programs a script runs. COMPATIBILITY.md, section 6 documents the limit.
+- **Safe process execution**, as the table below asked: INT 21h/4Bh (libc16's `spawnve`) for `.COM` and `.EXE` programs, `COMSPEC /C` only for `.BAT` files and COMMAND.COM's own commands, whose status is then unknown and taken as 0; command tails bounded (126 bytes, 122 through COMMAND.COM); the child's real exit status as `CHILDSTATUS`; redirection and pipes through files; NUL as standard input unless redirected.
+- **Floating point: libkitchen16's software floating point**, for every machine, 8087 or not. A float `expr` costs about 51 ms more than an integer one at 4.77 MHz (`fexpr1000` 1,467 ticks against `expr1000` 532), slower than Open Watcom's emulator (35 ms) and much slower than an 8087 (8 ms; M1-REPORT.md, 7.5). Integer work got faster in the same build (`expr1000` 606 to 532 ticks, `fib15` 1,384 to 1,274). Tcl 6's `expr` keeps integers as integers, so only scripts that ask for floating point pay.
+- **Formatting: libkitchen16** (section 5).
+
 **Open engineering decisions,** each to be settled by the milestone named, with measurements:
 
 | Decision | Options and constraints | Milestone |
 | --- | --- | --- |
-| Conventional-memory recovery when spawning a child | The heap never shrinks (M1-REPORT.md, 7.2). Options include shrinking the program's memory block before INT 21h/4Bh, swapping the heap to disk or EMS, or documenting the limit | M5 |
-| Safe DOS process execution | Direct INT 21h/4Bh for programs, `COMMAND.COM /C` only for builtins; bounded command tails (126 bytes); real exit status; redirection through files; no console input unless asked | M5 |
 | 16-bit stack and object limits | **Stack size settled in M4: 48 KB** (below). Still open: moving large local buffers to the heap, and whether the 32 KB stops can become Tcl errors | M7 (limits) |
-| Floating point | Open Watcom's 8087 emulator (not libc16 material), a clean-room software implementation, or integer-only `expr`; an emulated float `expr` costs about 35 ms more than an integer one on an 8088 (M1-REPORT.md, 7.5). M4 changed nothing here: Tcl16's new code uses no floating point, and `strtod`, `sscanf` and the 8087 fixups remain libc16 gaps (section 4.2) | M5 to M7, before the libc16 build |
-| Minimal formatting | A compact Tcl16-local formatter for internal formats and the `format` command (section 5), versus a shared engine; never a mandatory `libkitchen16`. M4's own code needs only `sprintf` of `%d` and `%.150s`, and writes its messages with `fputs` | Before the libc16 build |
-| Remaining libc16 gaps | Section 4.2: which functions belong in libc16 (clean-room) and which in Tcl16-local adapters | M5 to M7 |
+| Remaining libc16 gaps | `fopen`'s update modes (section 10.1) | M7 |
 | DOS/GR-DOS introspection | Command names and behaviour; depends on gr-dos/gr-dos#46 | M6 |
-| Minimum RAM and supported upper bounds | 184 KB at start today; about 430 KB for the heaviest measured workload | M7 |
+| Minimum RAM and supported upper bounds | 152 KB at start (M5); about 400 KB for the heaviest measured workload | M7 |
 
 **Stack size (settled in M4).** `TCL.EXE` links with a 48 KB stack (`make`'s `STACK`). `make measure` on DOSBox-X's emulated 8086:
 
@@ -365,5 +376,15 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 | Deepest recursion inside `expr` | 6 | 15 | 19 | 23 | 27 |
 
 A larger stack costs no conventional memory at start: the load image grows, but what `TCL.EXE` takes from DOS does not. 48 KB gives half as much depth again as 32 KB (`fib 15` and 20 levels inside `expr` run; `tests/tcl16/stack`). It leaves about 10 KB of DGROUP, beside 5.3 KB of static data, for growth in M5 to M7 and the libc16 build; 56 KB would leave under 3 KB. The stack guard (patch 0004) and its 3 KB margin are unchanged, and deeper recursion is still a Tcl error.
+
+**The stack with libc16 (M5).** The figures above are Open Watcom's runtime, whose heap starts in the stack's unused room. With libc16 the stack is part of what `TCL.EXE` takes, so each KB of stack is a KB less for the heap and for children:
+
+| Stack | 16 KB | 32 KB | 40 KB | 48 KB | 56 KB |
+| --- | --- | --- | --- | --- | --- |
+| Conventional memory taken at start | 120.3 KB | 136.3 KB | 144.3 KB | 152.3 KB | 160.3 KB |
+| Deepest simple recursion | 23 | 54 | 69 | 84 | 98 |
+| Deepest recursion inside `expr` | 7 | 15 | 19 | 23 | 27 |
+
+48 KB stays: the depth it gives is worth more to scripts than 16 KB of memory, and libc16's smaller static data (4.6 KB) leaves DGROUP more room than before.
 
 The guiding rule is to preserve a small, portable, useful Tcl executable while keeping the C runtime minimal. **Any work contributed back to `libc16` must be clean-room implemented.**

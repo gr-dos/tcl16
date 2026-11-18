@@ -14,7 +14,7 @@
  * implemented by Tiny Tcl 6.8.1.
  */
 
-#define TCL16_VERSION "development build (M4)"
+#define TCL16_VERSION "development build (M5)"
 
 /*
  * The longest command TCL.EXE assembles from lines, from a script read
@@ -54,5 +54,21 @@ extern void	Tcl16_InitReader(Tcl16Reader *r, Tcl16FillProc fill,
 extern void	Tcl16_FreeReader(Tcl16Reader *r);
 extern int	Tcl16_ReadLine(Tcl16Reader *r, int max);
 extern int	Tcl16_DosText(char *buf, int length);
+
+/*
+ * DOS paths (file.c): "/" and "\" both separate directories; a path may
+ * start with a drive, "X:".
+ */
+
+#define TCL16_IS_SEP(c)	((c) == '/' || (c) == '\\')
+
+extern int	Tcl16_PathPrefix(const char *name);
+extern char *	Tcl16_PathTail(char *name);
+
+/*
+ * The environment TCL.EXE started with (dosenv.c).
+ */
+
+extern char **	Tcl16_Environ(void);
 
 #endif /* TCL16_H */

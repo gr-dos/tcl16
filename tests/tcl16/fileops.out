@@ -1,0 +1,17 @@
+1
+1:can't create directory "NEWDIR\SUB\A.TXT": file already exists
+1:can't create directory "NEWDIR\SUB\A.TXT": file already exists
+01
+1:error renaming "C.TXT" to "NEWDIR\B.TXT": file already exists
+0
+1
+1:error renaming "NOSUCH": No such file or directory
+1:wrong # args: should be "file rename ?-force? ?--? source target"
+1:error deleting "NEWDIR": directory not empty
+0:
+0
+0
+111
+00
+1:wrong # args: should be "file mkdir name ?name ...?"
+1:wrong # args: should be "file delete ?-force? ?--? name ?name ...?"

@@ -26,9 +26,10 @@ For each variant VARDIR/NAME/TCL.EXE (with its F<tcl.map>):
 =item sizes
 
 the F<.EXE> size; from the map, the load image ("Memory size"), the code
-of Tiny Tcl and tcl16 (the modules' C<_TEXT> segments), the code of Open
-Watcom's runtime (the C<_TEXT> segment: C library, C<printf>, 8087
-emulator) and DGROUP without and with the stack;
+of Tiny Tcl and tcl16 (the code segments of the variant's own objects),
+the code of the C runtime (every other code segment: libc16 and
+libkitchen16's members, or Open Watcom's C<_TEXT> with its C library,
+C<printf> and 8087 emulator) and DGROUP without and with the stack;
 
 =item memory
 
@@ -136,10 +137,13 @@ for my $n (@names) {
     }
     my $map = slurp("$vardir/" . variant($n) . "/tcl.map");
     my ($tcl, $rt, $dg, $stack) = (0, 0, 0, 0);
+    # The variant's own objects (not library members): each one's code is
+    # in NAME_TEXT, the large model's segment for NAME.c.
+    my %own = map { lc($_) => 1 } $map =~ /^Module: [^(\n]*?([^\/(\n]+)\.obj\(/mg;
     while ($map =~ /^(\S+)\s+(\S+)\s+(\S+)\s+[0-9a-f]{4}:[0-9a-f]{4}\s+([0-9a-f]{8})$/mg) {
         my ($seg, $class, $group, $size) = ($1, $2, $3, hex $4);
         if ($class eq 'CODE') {
-            if ($seg eq '_TEXT') { $rt += $size } else { $tcl += $size }
+            if ($seg =~ /^(.+)_TEXT$/ && $own{lc $1}) { $tcl += $size } else { $rt += $size }
         }
         if ($group eq 'DGROUP') {
             if ($class eq 'STACK') { $stack += $size } else { $dg += $size }
@@ -173,7 +177,7 @@ $row->('', @names);
 $row->('TCL.EXE', map { kb(v($_, 'size')) } @names);
 $row->('load image', map { kb(v($_, 'image')) } @names);
 $row->('code: Tcl + tcl16', map { kb(v($_, 'tclcode')) } @names);
-$row->('code: Open Watcom runtime', map { kb(v($_, 'rtcode')) } @names);
+$row->('code: C runtime', map { kb(v($_, 'rtcode')) } @names);
 $row->('DGROUP data', map { kb(v($_, 'dgroup')) } @names);
 $row->('stack', map { kb(v($_, 'stack')) } @names);
 push @lines, '';

@@ -1,0 +1,3 @@
+puts "before"
+puts "exec [catch {exec CHILD.EXE -o hi} m]:$m"
+puts "after"

@@ -17,7 +17,11 @@
 # - tclEnv.c's putenv, which replaces the C library's on DOS, is renamed
 #   so that glibc's stays in use;
 # - tclXdbg.c's static functions, declared extern by tclExtdInt.h first
-#   (Open Watcom only warns), lose "static".
+#   (Open Watcom only warns), lose "static";
+# - Tcl16's DOS layer for files (src/file.c, glob.c, dosdir.c, dosenv.c)
+#   is DOS-only: the host keeps Tiny Tcl's file and glob commands
+#   (tcldosaz.c's, renamed back from TclDosFileCmd, and tcldosgl.c) and
+#   the C library's environ.
 
 set -eu
 
@@ -28,19 +32,21 @@ top=$(cd "$(dirname "$0")/.." && pwd)
 rm -rf "$out"
 mkdir -p "$out/hinc" "$out/c"
 cp "$src"/*.c "$src"/*.h "$top/src/main.c" "$top/src/stack.c" \
-  "$top/src/dostext.c" "$top/src/source.c" "$top/src/tcl16.h" "$out/c/"
+  "$top/src/dostext.c" "$top/src/source.c" "$top/src/scan.c" \
+  "$top/src/tcl16.h" "$out/c/"
 printf 'extern char **environ;\n' > "$out/hinc/dos.h"
 printf '#include <unistd.h>\n' > "$out/hinc/io.h"
 printf '#include <unistd.h>\n' > "$out/hinc/direct.h"
 sed -i '/^extern int\treadlink/d' "$out/c/tcldos.h"
 sed -i 's/^putenv(string)$/tcl16_host_putenv(string)/' "$out/c/tclEnv.c"
 sed -i 's/^static void$/void/; s/^static int$/int/' "$out/c/tclXdbg.c"
+sed -i 's/^TclDosFileCmd(dummy/Tcl_FileCmd(dummy/' "$out/c/tcldosaz.c"
 
 cd "$out/c"
 for m in tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash tclParse \
          panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
          tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir main \
-         stack dostext source; do
+         stack dostext source scan; do
   gcc -m32 -std=gnu89 -w -O1 -g -I../hinc -DO_BINARY=0 -c "$m.c" -o "$m.o"
 done
 gcc -m32 -o ../tclhost *.o -lm

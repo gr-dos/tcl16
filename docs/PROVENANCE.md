@@ -88,6 +88,8 @@ patch begins with its explanation; docs/M1-REPORT.md has the evidence.
 | `0007-qsort-cdecl.patch` | `lsort`'s `qsort` comparator in the C library's calling convention: `__cdecl` for libc16 (`TCL16_CDECL`, with `TCL16_LIBC16`), found by `make libc16-try` with libc16 0.06 (M4) |
 | `0008-assemble-size.patch` | `Tcl_AssembleCmd`'s buffer growth in `long` through `TclGrowSize`, as in 0005 (M4) |
 | `0009-dos-source.patch` | Removes `Tcl_EvalFile` and `Tcl_SmallFootprintEvalFile` from `tcldosut.c`: Tcl16's own `src/source.c` reads scripts as DOS text (M4) |
+| `0010-libc16.patch` | Links with libc16 and libkitchen16 (`TCL16_LIBC16`): `<kitchen16.h>` in `tclInt.h` and `panic.c`, `panic` exits with 255 rather than `abort`, `scan` calls Tcl16's `Tcl16_Sscanf` (`src/scan.c`), `tcldos.h` takes `opendir` from `src/dosdir.h`, and `tclEnv.c` reads the environment from `src/dosenv.c` and exports it as `TclEnviron` for `exec` (M5) |
+| `0011-dos-file.patch` | Renames `tcldosaz.c`'s `Tcl_FileCmd` to `TclDosFileCmd`, which Tcl16's own `file` (`src/file.c`) calls for the options it does not handle (M5) |
 
 All patches are tcl16's own work, under Tiny Tcl's terms as modifications
 of it.
@@ -177,13 +179,19 @@ Tcl 6.7's interpreter core.
 
 `src/main.c` (the `TCL.EXE` command line and REPL, M4),
 `src/dostext.c` and `src/source.c` (DOS text and `source`, M4),
+`src/file.c`, `src/glob.c`, `src/exec.c`, `src/scan.c`, `src/dosdir.c`
+and `src/dosenv.c` (`file`, `glob`, `exec`, `scan`, directories and the
+environment over libc16, M5; `glob.c` replaces Tiny Tcl's `tcldosgl.c`,
+which is not built),
 `src/tcl16.h`, `src/stack.c` (the stack guard), `src/probe.c` (the
 `m1probe` measurement command), `src/tcl67main.c` (the M1/M2 test
 driver, kept for the M2 reference build), `scripts/`, `tests/` and
 `docs/` are written for tcl16. `tests/run-dos` is adapted from
 gr-dos/perl16's `tests/run-dos`, and `tests/tools/err2out.c` is
-perl16's; `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
-with the 0.07 pin.
+perl16's; `tests/tools/child.c`, `cat.c`, `wc.c` and `pwd.c` are
+tcl16's (M5). `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
+with the 0.15 pin, and `scripts/fetch-libkitchen16` libkitchen16's
+`consumers/fetch-libkitchen16` with the 0.02 pin.
 
 None of this work touches libc16. The libc16 experiment
 (`scripts/try-libc16`) writes declaration-only shims inside
@@ -194,8 +202,9 @@ libc16 (DESIGN.md, section 4).
 
 | Input | Pin |
 |---|---|
-| libc16 | release 0.07, `libc16-0.07.zip`, SHA-256 `0a0f56e0145d3ffe9fb429812d968567066b83b4e68bd7917443e77f54e09720` (`scripts/fetch-libc16`), source revision `c23f0c7369a8ae4f9b1aa14e5d3277b555fa3a54` (M4; M1 to M3 pinned 0.04) |
-| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 0.07 names (its `tools/fetch-watcom`; 0.04 named the same one) |
+| libc16 | release 0.15, `libc16-0.15.zip`, SHA-256 `042b6d2d18c381592cc929523835a695d7b2955a606bf44df6b2a43727f0d287` (`scripts/fetch-libc16`; M5; M4 pinned 0.07, M1 to M3 0.04) |
+| libkitchen16 | release 0.02, `libkitchen16-0.02.zip`, SHA-256 `2ca356b7d2a23442b7851b10c09cfa577ee3888eaf5b4b899f10ee494162cb85` (`scripts/fetch-libkitchen16`; M5) |
+| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 names (its `tools/fetch-watcom`; unchanged from 0.04 to 0.15). Since M5 only its compiler and linker are used for `TCL.EXE`; the M2 reference build still links its runtime |
 | DOSBox-X | the host's package, for the tests and measurements only |
 | gcc | the host's, with `-m32`, for `make host` only |
 
@@ -203,4 +212,5 @@ M1 to M3 measured libc16 0.04 (M1-REPORT.md, section 6). M4 pins 0.07,
 which has 0.05's `rename`, `unlink`, `remove`, `fseek` and `ftell` and
 0.06's `strtol`, `strcspn`, `strstr`, `qsort`, `abort`, `clearerr`,
 `isascii`, `fstat`, `getcwd` and `chdir`; DESIGN.md, section 4.2, has
-what is still missing.
+what is still missing. M5 pins 0.15 and libkitchen16 0.02, and links
+`TCL.EXE` with them (DESIGN.md, sections 4.2 and 5).
