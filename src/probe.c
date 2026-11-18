@@ -3,7 +3,7 @@
  *
  *   m1probe dosfree    bytes in the largest block DOS can allocate
  *                      (INT 21h AH=48h with BX=FFFFh)
- *   m1probe stack      bytes of stack left (Open Watcom's stackavail)
+ *   m1probe stack      bytes of stack left (stack.c's Tcl16_StackLeft)
  *   m1probe ticks      the BIOS tick count at 0040:006C (18.2 a second)
  *
  * It exists only for the evaluation, and the names are not a proposal
@@ -11,12 +11,12 @@
  */
 
 #include <dos.h>
-#include <malloc.h>
 #include <stdio.h>
 #include <string.h>
-#include "tcl.h"
+#include "tclInt.h"
 
 int Tcl_InitProbe(Tcl_Interp *interp);
+unsigned Tcl16_StackLeft(void);
 
 static int
 ProbeCmd(ClientData clientData, Tcl_Interp *interp, int argc, char **argv)
@@ -35,7 +35,7 @@ ProbeCmd(ClientData clientData, Tcl_Interp *interp, int argc, char **argv)
         intdos(&r, &r);
         sprintf(interp->result, "%lu", (unsigned long) r.x.bx * 16UL);
     } else if (strcmp(argv[1], "stack") == 0) {
-        sprintf(interp->result, "%u", (unsigned) stackavail());
+        sprintf(interp->result, "%u", Tcl16_StackLeft());
     } else if (strcmp(argv[1], "ticks") == 0) {
         unsigned long __far *ticks = (unsigned long __far *) MK_FP(0x40, 0x6C);
 

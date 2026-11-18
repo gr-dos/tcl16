@@ -23,6 +23,11 @@
 #define TCL16_STACK_MARGIN 3072
 #endif
 
+/*
+ * Tcl16_StackLeft: the bytes of stack left, which m1probe also reports
+ * (probe.c); UINT_MAX where it is not known (the host build).
+ */
+
 #if defined(TCL16_LIBC16)
 #include <dos.h>
 
@@ -31,25 +36,33 @@ extern char __cdecl end[];	/* The end of BSS: the stack's bottom. */
 static unsigned GetSP(void);
 #pragma aux GetSP = "mov ax,sp" value [ax] modify exact [ax];
 
-int
-TclStackExhausted(void)
+unsigned
+Tcl16_StackLeft(void)
 {
     char __far *bottom = end;
 
-    return GetSP() - FP_OFF(bottom) < TCL16_STACK_MARGIN;
+    return GetSP() - FP_OFF(bottom);
 }
 #elif defined(TCL16_STACKAVAIL)
 #include <malloc.h>
 
-int
-TclStackExhausted(void)
+unsigned
+Tcl16_StackLeft(void)
 {
-    return stackavail() < TCL16_STACK_MARGIN;
+    return stackavail();
 }
 #else
+#include <limits.h>
+
+unsigned
+Tcl16_StackLeft(void)
+{
+    return UINT_MAX;
+}
+#endif
+
 int
 TclStackExhausted(void)
 {
-    return 0;
+    return Tcl16_StackLeft() < TCL16_STACK_MARGIN;
 }
-#endif

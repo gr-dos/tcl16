@@ -1,8 +1,8 @@
 #!/bin/sh
 #
 # Build one measurement variant of TCL.EXE (docs/M1-REPORT.md, section 7)
-# in VAR_OUT/NAME, from the assembled sources in VAR_SRC, with Open
-# Watcom's runtime like the development build; and VAR_OUT/FREEMEM.EXE
+# in VAR_OUT/NAME, from the assembled sources in VAR_SRC, with the C
+# runtime of the build it measures; and VAR_OUT/FREEMEM.EXE
 # (tests/tools/freemem.c). Needs wcc and wlink on PATH (make variants,
 # make variants-tcl67).
 #
@@ -13,7 +13,11 @@
 #   VAR_OUT     output directory (build/var)
 #   VAR_NAMES   the candidate's modules in VAR_SRC (Tiny Tcl's)
 #   VAR_DEFS    more wcc options for every module (none)
-#   VAR_T16     tcl16's modules in src/ (main stack dostext source probe)
+#   VAR_T16     tcl16's modules in src/ (TCL.EXE's, and probe)
+#   VAR_RT      libc16 (default): libc16 and libkitchen16, as
+#               build/dev/TCL.EXE since M5, from VAR_LIBC16 and
+#               VAR_LIBK16 (the staged release directories); watcom:
+#               Open Watcom's runtime, as the M2 reference build
 #
 #   os      -os, 48 KB stack: build/dev/TCL.EXE again
 #   ox      -ox (speed), 48 KB stack
@@ -43,21 +47,39 @@ src=${VAR_SRC:-build/src}
 top=${VAR_OUT:-build/var}
 names=${VAR_NAMES:-tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
   tclParse panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
-  tcldosaz tcldosut tcldosst tcldosgl tclXdbg tclXgen readdir}
+  tcldosaz tcldosut tcldosst tclXdbg tclXgen readdir}
+t16=${VAR_T16:-main stack dostext source scan dosdir dosenv file glob exec probe}
+rt=${VAR_RT:-libc16}
 out=$top/$name
 rm -rf "$out"
 mkdir -p "$out"
-flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL ${VAR_DEFS:-} -I$src -I$WATCOM/h"
+case $rt in
+  libc16)
+    flags="-q -zq -zl -zld -x -ml -0 -zc -s -fpc $opt -bt=dos -DTCL16_PROBE"
+    flags="$flags -DTCL16_LIBC16 ${VAR_DEFS:-} -Isrc -I$src"
+    flags="$flags -I$VAR_LIBK16/include -I$VAR_LIBC16/include"
+    link="option quiet, nodefaultlibs, stack=$stack, map=$out/tcl.map
+format dos name $out/TCL.EXE"
+    libs="library $VAR_LIBK16/lib/LIBK16L.LIB
+library $VAR_LIBC16/lib/LIBC16L.LIB" ;;
+  watcom)
+    flags="-q -zq -ml -0 -zc $opt -bt=dos -DTCL16_PROBE -DTCL16_STACKAVAIL"
+    flags="$flags ${VAR_DEFS:-} -I$src -I$WATCOM/h"
+    link="option quiet, stack=$stack, map=$out/tcl.map
+system dos name $out/TCL.EXE"
+    libs= ;;
+  *) echo "build-variant: unknown runtime $rt" >&2; exit 1 ;;
+esac
 for m in $names; do
   wcc $flags -fo="$out/$m.obj" "$src/$m.c"
 done
-for m in ${VAR_T16:-main stack dostext source probe}; do
+for m in $t16; do
   wcc $flags -fo="$out/$m.obj" "src/$m.c"
 done
 {
-  echo "option quiet, stack=$stack, map=$out/tcl.map"
-  echo "system dos name $out/TCL.EXE"
+  echo "$link"
   for o in "$out"/*.obj; do echo "file $o"; done
+  echo "$libs"
 } > "$out/tcl.lnk"
 wlink @"$out/tcl.lnk"
 

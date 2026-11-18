@@ -188,9 +188,10 @@ libc16-try: $(SRC)/.stamp $(LIBC16L) $(TOOLS_ENV)
 # the probe scripts' memory, stack and time figures under DOSBox-X.
 VARIANTS    = os ox od stk16 stk32 stk40 stk56
 
-variants: $(SRC)/.stamp $(TOOLS_ENV)
+variants: $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
 	rm -f build/var/FREEMEM.EXE
 	$(WATCOM_ENV) && for v in $(VARIANTS); do \
+	  VAR_LIBC16=$(LIBC16_DIR) VAR_LIBK16=$(LIBK16_DIR) \
 	  sh scripts/build-variant $$v || exit 1; done
 
 measure: variants
@@ -264,7 +265,7 @@ variants-tcl67: $(T67_SRC)/.stamp $(TOOLS_ENV)
 	rm -f $(T67)/var/FREEMEM.EXE
 	$(WATCOM_ENV) && for v in $(VARIANTS); do \
 	  VAR_SRC=$(T67_SRC) VAR_OUT=$(T67)/var VAR_NAMES="$(T67_NAMES)" \
-	  VAR_DEFS=-DTCL16_TCL67 VAR_T16="$(T67_T16)" \
+	  VAR_DEFS=-DTCL16_TCL67 VAR_T16="$(T67_T16)" VAR_RT=watcom \
 	  sh scripts/build-variant $$v || exit 1; done
 
 measure-tcl67: variants-tcl67
