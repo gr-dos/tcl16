@@ -34,10 +34,15 @@ jobs:
       - name: Check the vendored Tiny Tcl source
         run: make check-vendor
 
-      # build/dev/TCL.EXE links Open Watcom's runtime: an evaluation
-      # binary (docs/M1-REPORT.md), so it is not uploaded.
+      # build/dev/TCL.EXE, linked with libc16 and libkitchen16: what a
+      # release publishes as tcl.exe (release.yml).
       - name: Build
         run: make
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tcl.exe
+          path: build/dev/TCL.EXE
 
       - name: Test (DOSBox-X, 8086)
         run: make test
