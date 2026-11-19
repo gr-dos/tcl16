@@ -59,7 +59,7 @@ directory, copied back after the boot, and its F<AUTOEXEC.BAT> replaced by one t
 case in turn with the kernel's own COMMAND.COM, then writes a marker to
 COM1. QEMU is stopped at the marker, or after BOOT_TIMEOUT seconds
 (default 900); cases not reached then did not finish. CONFIG.SYS
-gives FILES=20: exec needs more than DOS's default 8. QEMU is not an
+gives FILES=20 (BOOT_FILES): exec needs more than DOS's default 8. QEMU is not an
 8086: the 8086 is DOSBox-X's. IMAGE itself is not changed. Needs mtools.
 
 Environment: DOSBOX (default dosbox-x), DOSBOX_TIMEOUT seconds per case
@@ -188,7 +188,7 @@ if (defined $boot) {
     my ($floppy, $hd, $serial) = ("$base-a.img", "$base-c.img", "$base.serial");
     copy($boot, $floppy) or die "copy $boot: $!\n";
     dosfile("$base.bat", '@ECHO OFF', 'C:', 'CALL RUN.BAT', 'ECHO TCL16-END >AUX');
-    dosfile("$base.sys", 'FILES=20');
+    dosfile("$base.sys", 'FILES=' . ($ENV{BOOT_FILES} // 20));
     for (["$base.bat", 'AUTOEXEC.BAT'], ["$base.sys", 'CONFIG.SYS']) {
         system('mcopy', '-o', '-i', $floppy, $_->[0], "::/$_->[1]") == 0
             or die "mcopy $_->[1] failed\n";
