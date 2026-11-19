@@ -55,7 +55,8 @@ TCL_NAMES   = tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
 # tcl16's own, in src/: the command line, the stack guard and the DOS
 # layer. probe.c (m1probe) is only in the measurement builds
 # (scripts/build-variant), never in TCL.EXE.
-T16_NAMES   = main stack dostext source scan dosdir dosenv file glob exec
+T16_NAMES   = main stack dostext source scan dosdir dosenv file glob exec \
+              dosinfo
 
 # Development build: large model, 8086 instructions, as a consumer of
 # libc16 and libkitchen16 builds (their docs/ABI.md, "Consumer build"):
@@ -165,9 +166,27 @@ $(SUITE_UTIL)/.stamp: tests/tools/cat.c tests/tools/wc.c tests/tools/pwd.c \
 	    library $(LIBC16_DIR)/lib/LIBC16.LIB || exit 1; done
 	touch $@
 
-test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE
+# FAKEID.COM imitates GR-DOS's identification call and runs a program
+# (tests/tools/fakeid.asm), so that tests/tcl16/dosgr can see "dos" on
+# GR-DOS under DOSBox-X. A test tool, never published.
+$(DEV)/FAKEID.COM: tests/tools/fakeid.asm $(TOOLS_ENV)
+	mkdir -p $(DEV)
+	$(WATCOM_ENV) && wasm -q -fo=$(DEV)/fakeid.obj $< && \
+	  wlink option quiet format dos com name $@ file $(DEV)/fakeid.obj
+
+test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE $(DEV)/FAKEID.COM
 	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE -f $(DEV)/CHILD.EXE \
+	  -f $(DEV)/FAKEID.COM \
 	  $(DEV)/TCL.EXE tests/lang tests/dos tests/tinytcl tests/tcl16
+
+# The dos command on GR-DOS itself, under QEMU (tests/run-grdos): an image
+# with GR-DOS's identification call and GRVER.EXE, such as gr-dos's GRVER
+# test image (its make test-grver). Not part of make test: it needs a
+# gr-dos build, mtools and qemu-system-i386.
+GRDOS_IMAGE ?= ../gr-dos/build/linux/tests/grver-grdos.img
+
+test-grdos: $(DEV)/TCL.EXE
+	perl tests/run-grdos $(GRDOS_IMAGE) $(DEV)/TCL.EXE tests/grdos
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
@@ -280,7 +299,7 @@ check-vendor-zip:
 
 clean:
 	rm -rf $(SRC) $(SRC).tmp $(DEV) build/var build/host build/libc16-try \
-	  build/run-dos build/run-host build/measure
+	  build/run-dos build/run-grdos build/run-host build/measure
 	rm -rf $(T67_SRC) $(T67_SRC).tmp $(T67_DEV) $(T67)/var \
 	  $(T67)/libc16-try $(T67)/run-dos $(T67)/measure $(T67)/suite \
 	  build/suite
@@ -305,6 +324,8 @@ Tests
   make test           tests/lang, tests/dos, tests/tinytcl and tests/tcl16
                       with build/dev/TCL.EXE under DOSBox-X, on an
                       emulated 8086 (tests/run-dos)
+  make test-grdos     tests/grdos with build/dev/TCL.EXE on GR-DOS under
+                      QEMU, from GRDOS_IMAGE (tests/run-grdos)
   make test-host      tests/lang with build/host/tclhost (tests/run-host)
   make test-suite     Tcl 6.7's own test suite (from the M2 download) with
                       build/dev/TCL.EXE, against tests/suite/tinytcl.baseline
@@ -340,11 +361,13 @@ Variables
                       docs/DESIGN.md, section 12)
   DOSBOX=PROG         DOSBox-X to run (default dosbox-x)
   DOSBOX_TIMEOUT=N    seconds per DOS test case (default 60)
+  GRDOS_IMAGE=FILE    GR-DOS floppy image for make test-grdos (default
+                      ../gr-dos/build/linux/tests/grver-grdos.img)
 endef
 
 # The assembled sources are made by one rule; make must not delete them.
 .SECONDARY:
 
-.PHONY: all test host test-host libc16-try variants measure check-vendor \
+.PHONY: all test test-grdos host test-host libc16-try variants measure check-vendor \
         check-vendor-zip clean help tcl67 test-tcl67 libc16-try-tcl67 \
         variants-tcl67 measure-tcl67 test-suite test-suite-tcl67

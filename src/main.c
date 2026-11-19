@@ -40,13 +40,16 @@ void Tcl_InitDebug(Tcl_Interp *interp);
 void TclX_InitGeneral(Tcl_Interp *interp);
 int Tcl_InitReaddir(Tcl_Interp *interp);
 #ifdef TCL16_LIBC16
-/* Tcl16's exec (exec.c). */
+/* Tcl16's exec (exec.c) and dos (dosinfo.c). */
 int Tcl16_ExecCmd(ClientData dummy, Tcl_Interp *interp, int argc,
+    char **argv);
+int Tcl16_DosCmd(ClientData dummy, Tcl_Interp *interp, int argc,
     char **argv);
 #else
 /*
  * The host reference build (scripts/build-host), which runs only
- * tests/lang, has no exec.c: its exec is an error that says so.
+ * tests/lang, has no exec.c: its exec is an error that says so. It has
+ * no dosinfo.c either, and no dos command.
  */
 
 static int
@@ -89,6 +92,10 @@ MakeInterp(void)
     Tcl_InitReaddir(interp);
     Tcl_CreateCommand(interp, "exec", Tcl16_ExecCmd, (ClientData) NULL,
 	    (Tcl_CmdDeleteProc *) NULL);
+#ifdef TCL16_LIBC16
+    Tcl_CreateCommand(interp, "dos", Tcl16_DosCmd, (ClientData) NULL,
+	    (Tcl_CmdDeleteProc *) NULL);
+#endif
 #ifdef TCL16_PROBE
     Tcl_InitProbe(interp);
 #endif

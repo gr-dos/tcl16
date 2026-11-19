@@ -48,7 +48,7 @@ top=${VAR_OUT:-build/var}
 names=${VAR_NAMES:-tclGet tclProc tclVar tclAssem tclCmdAH tclCmdMZ tclHash \
   tclParse panic regexp tclCmdIL tclalloc tclBasic tclExpr tclUtil tclEnv \
   tcldosaz tcldosut tcldosst tclXdbg tclXgen readdir}
-t16=${VAR_T16:-main stack dostext source scan dosdir dosenv file glob exec probe}
+t16=${VAR_T16:-main stack dostext source scan dosdir dosenv file glob exec dosinfo probe}
 rt=${VAR_RT:-libc16}
 out=$top/$name
 rm -rf "$out"
