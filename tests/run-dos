@@ -35,6 +35,9 @@ Any other file in DIR is a fixture, copied into the work directory
 under its name in upper case, as is each FILE given with C<-f> (a test
 tool, such as F<CHILD.EXE> for the exec cases).
 
+In NAME.out, C<@VERSION@> stands for Tcl16's version, the line in
+F<VERSION>.
+
 A C<# command:> line may redirect standard input from a fixture
 (C<# command: -i E<lt>REPL.IN>); the harness adds C<E<gt>NAME.OUT>.
 
@@ -83,6 +86,14 @@ die "$boot not found\n" if defined $boot && !-f $boot;
 die "$exe not found\n" unless -f $exe;
 die "$err2out not found\n" if defined $err2out && !-f $err2out;
 my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
+# @VERSION@ in an expected output is Tcl16's version, VERSION's line.
+my $version = do {
+    my $f = File::Spec->catfile(File::Basename::dirname(__FILE__), '..', 'VERSION');
+    open my $h, '<', $f;
+    my $v = <$h>;
+    close $h;
+    $v =~ s/\s+\z//r;
+};
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 60;
 
 my $work = File::Spec->rel2abs($ENV{WORK} // 'build/run-dos');
@@ -117,7 +128,7 @@ for my $dir (@dirs) {
         }
         (my $exp = $t) =~ s/\.tcl$/.out/;
         die "$t: no $exp\n" unless -f $exp;
-        $case{expect} = slurp($exp);
+        $case{expect} = slurp($exp) =~ s/\@VERSION\@/$version/gr;
         copy($t, "$work/$name.TCL") or die "copy $t: $!\n";
         push @cases, \%case;
     }

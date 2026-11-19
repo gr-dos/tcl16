@@ -30,6 +30,11 @@
 # Needs make, curl, unzip, patch, Perl 5.36 or later and, for the DOS
 # tests and probes, dosbox-x; make host needs gcc with -m32 support.
 
+# Tcl16's version: the one line in VERSION, DOS style (0.01, 0.02, ...
+# 1.00), which TCL /? reports. Merging a change to it releases it
+# (.github/workflows/release.yml; README.md, "Releasing").
+VERSION     := $(shell cat VERSION)
+
 VENDOR      := vendor/tinytcl-6.8.1
 SRC         := build/src
 DEV         := build/dev
@@ -70,7 +75,8 @@ CC          = wcc
 OPT        ?= -os
 STACK      ?= 48k
 DEV_CFLAGS  = -q -zq -zl -zld -x -ml -0 -zc -s -fpc $(OPT) -bt=dos \
-              -DTCL16_LIBC16 -Isrc -I$(SRC) -I$(LIBK16_DIR)/include \
+              -DTCL16_LIBC16 '-DTCL16_VERSION="$(VERSION)"' \
+              -Isrc -I$(SRC) -I$(LIBK16_DIR)/include \
               -I$(LIBC16_DIR)/include
 DEV_LDOPTS  = option quiet, nodefaultlibs, stack=$(STACK)
 DEV_LIBS    = library $(LIBK16L) library $(LIBC16L)
@@ -94,7 +100,7 @@ $(DEV)/%.obj: $(SRC)/%.c $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
 	mkdir -p $(DEV)
 	$(WATCOM_ENV) && $(CC) $(DEV_CFLAGS) -fo=$@ $<
 
-$(DEV)/%.obj: src/%.c src/tcl16.h $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
+$(DEV)/%.obj: src/%.c src/tcl16.h VERSION $(SRC)/.stamp $(LIBK16L) $(TOOLS_ENV)
 	mkdir -p $(DEV)
 	$(WATCOM_ENV) && $(CC) $(DEV_CFLAGS) -fo=$@ $<
 
@@ -175,9 +181,11 @@ $(DEV)/FAKEID.COM: tests/tools/fakeid.asm $(TOOLS_ENV)
 	  wlink option quiet format dos com name $@ file $(DEV)/fakeid.obj
 
 TEST_TOOLS  = $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE $(DEV)/FAKEID.COM
+# examples/ is copied in for tests/examples, which runs each example.
+EXAMPLES    = $(sort $(wildcard examples/*.tcl))
 RUN_DOS     = perl tests/run-dos -e $(DEV)/ERR2OUT.EXE -f $(DEV)/CHILD.EXE \
-	      -f $(DEV)/FAKEID.COM
-TEST_DIRS   = tests/lang tests/dos tests/tinytcl tests/tcl16
+	      -f $(DEV)/FAKEID.COM $(EXAMPLES:%=-f %)
+TEST_DIRS   = tests/lang tests/dos tests/tinytcl tests/tcl16 tests/examples
 
 test: $(DEV)/TCL.EXE $(TEST_TOOLS)
 	$(RUN_DOS) $(DEV)/TCL.EXE $(TEST_DIRS) tests/notgrdos

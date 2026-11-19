@@ -9,12 +9,15 @@
 #include <limits.h>
 
 /*
- * Tcl16's own version, which /? reports. There is no release yet (M7
- * numbers the first). The language is Tcl 6.7 ("info tclversion"), as
- * implemented by Tiny Tcl 6.8.1.
+ * Tcl16's own version, which /? reports: VERSION's, from the Makefile.
+ * The builds that do not give it (the host reference build, the
+ * measurement variants) are not releases. The language is Tcl 6.7
+ * ("info tclversion"), as implemented by Tiny Tcl 6.8.1.
  */
 
-#define TCL16_VERSION "development build (M6)"
+#ifndef TCL16_VERSION
+#define TCL16_VERSION "(not a release build)"
+#endif
 
 /*
  * The longest command TCL.EXE assembles from lines, from a script read
