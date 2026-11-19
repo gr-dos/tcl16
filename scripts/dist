@@ -1,0 +1,42 @@
+#!/bin/sh
+# scripts/dist - the release files, in build/dist (make dist):
+#
+#   LICENSE.TXT        every notice TCL.EXE needs, in DOS text: Tcl16's
+#                      LICENSE, Tiny Tcl's (vendor/LICENSE.tinytcl,
+#                      verbatim), and the MIT notices of libc16 and
+#                      libkitchen16, linked into it
+#   tcl16-VERSION.zip  TCL.EXE and LICENSE.TXT
+#
+#   scripts/dist TCL.EXE LIBC16_DIR LIBK16_DIR
+#
+# The release workflow attaches tcl.exe, LICENSE.TXT and the zip
+# (README.md, "Releasing").
+set -eu
+exe=$1 libc16=$2 libk16=$3
+version=$(cat VERSION)
+out=build/dist
+for f in "$exe" LICENSE vendor/LICENSE.tinytcl "$libc16/LICENSE" "$libk16/LICENSE"; do
+  [ -f "$f" ] || { echo "dist: $f not found" >&2; exit 1; }
+done
+rm -rf "$out"
+mkdir -p "$out/zip"
+
+part() {
+  printf '\n========================================================================\n%s\n========================================================================\n\n' "$1"
+  tr -d '\r' < "$2"
+}
+{
+  printf 'Tcl16 %s: license notices for TCL.EXE\n' "$version"
+  printf '\nTCL.EXE is built from Tcl16, Tiny Tcl 6.8.1, libc16 %s and\nlibkitchen16 %s. Their notices follow, each as its source has it.\n' \
+    "$(cat "$libc16/VERSION")" "$(cat "$libk16/VERSION")"
+  part "Tcl16 (https://github.com/gr-dos/tcl16): LICENSE" LICENSE
+  part "Tiny Tcl 6.8.1 (Tcl16's sources from it, with Tcl16's patches): its LICENSE.txt" vendor/LICENSE.tinytcl
+  part "libc16 (https://github.com/gr-dos/libc16), linked into TCL.EXE: LICENSE" "$libc16/LICENSE"
+  part "libkitchen16 (https://github.com/gr-dos/libkitchen16), linked into TCL.EXE: LICENSE" "$libk16/LICENSE"
+} | sed 's/$/\r/' > "$out/LICENSE.TXT"
+
+cp "$exe" "$out/zip/TCL.EXE"
+cp "$out/LICENSE.TXT" "$out/zip/LICENSE.TXT"
+(cd "$out/zip" && zip -q -X "../tcl16-$version.zip" TCL.EXE LICENSE.TXT)
+rm -rf "$out/zip"
+ls -l "$out"

@@ -313,12 +313,16 @@ measure-tcl67: variants-tcl67
 check-vendor:
 	sh scripts/check-vendor
 
+dist: $(DEV)/TCL.EXE
+	sh scripts/dist $(DEV)/TCL.EXE $(LIBC16_DIR) $(LIBK16_DIR)
+
 check-vendor-zip:
 	sh scripts/check-vendor --zip
 
 clean:
 	rm -rf $(SRC) $(SRC).tmp $(DEV) build/var build/host build/libc16-try \
-	  build/run-dos build/run-grdos build/run-msdos build/run-host build/measure
+	  build/run-dos build/run-grdos build/run-msdos build/run-host build/measure \
+	  build/dist
 	rm -rf $(T67_SRC) $(T67_SRC).tmp $(T67_DEV) $(T67)/var \
 	  $(T67)/libc16-try $(T67)/run-dos $(T67)/measure $(T67)/suite \
 	  build/suite
@@ -334,6 +338,8 @@ Usage: make [TARGET] [VARIABLE=value ...]
 Build
   make, make all      build/dev/TCL.EXE, the development build (large
                       model, 8086, libc16 and libkitchen16; not a release)
+  make dist           build/dist: LICENSE.TXT, every notice TCL.EXE needs,
+                      and tcl16-VERSION.zip, TCL.EXE with it (scripts/dist)
   make host           build/host/tclhost, Tiny Tcl for Linux (gcc -m32), as
                       a 32-bit-int reference for the tests
   make clean          remove build products; keep downloads and tools
@@ -391,6 +397,6 @@ endef
 # The assembled sources are made by one rule; make must not delete them.
 .SECONDARY:
 
-.PHONY: all test test-grdos test-msdos host test-host libc16-try variants measure check-vendor \
+.PHONY: all dist test test-grdos test-msdos host test-host libc16-try variants measure check-vendor \
         check-vendor-zip clean help tcl67 test-tcl67 libc16-try-tcl67 \
         variants-tcl67 measure-tcl67 test-suite test-suite-tcl67

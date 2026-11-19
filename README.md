@@ -125,7 +125,10 @@ The version is the one line in `VERSION`, DOS style (0.01, 0.02, ...
 1.00), not semantic versioning; `TCL /?` reports it. When a PR that
 changes it is merged to main, the release workflow
 (`.github/workflows/release.yml`) builds and tests the merge commit, tags
-it `v<VERSION>` and publishes a GitHub release with `tcl.exe` attached.
+it `v<VERSION>` and publishes a GitHub release with `tcl.exe`,
+`LICENSE.TXT` (the notices `TCL.EXE` needs: Tcl16's, Tiny Tcl's, and the
+MIT notices of libc16 and libkitchen16) and `tcl16-<VERSION>.zip`, the
+two together; `make dist` makes the last two in `build/dist`.
 
 ## License
 

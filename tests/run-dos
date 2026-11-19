@@ -89,10 +89,12 @@ my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
 # @VERSION@ in an expected output is Tcl16's version, VERSION's line.
 my $version = do {
     my $f = File::Spec->catfile(File::Basename::dirname(__FILE__), '..', 'VERSION');
-    open my $h, '<', $f;
+    open my $h, '<', $f or die "$f: $!\n";
     my $v = <$h>;
     close $h;
-    $v =~ s/\s+\z//r;
+    die "$f is empty\n" unless defined $v;
+    $v =~ s/\s+\z//;
+    $v;
 };
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 60;
 

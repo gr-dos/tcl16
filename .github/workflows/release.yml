@@ -2,7 +2,8 @@ name: release
 
 # main only changes by merging a PR, so a push to main is a merge.
 # If VERSION names a version without a tag, build and test that merge
-# commit, tag it v<VERSION> and publish a release with tcl.exe attached
+# commit, tag it v<VERSION> and publish a release with tcl.exe, the
+# license notices it needs (LICENSE.TXT) and a zip of both attached
 # (README.md, "Releasing").
 
 on:
@@ -55,6 +56,7 @@ jobs:
           make check-vendor
           make
           make test
+          make dist
           cp build/dev/TCL.EXE tcl.exe
 
       - name: Create release
@@ -63,7 +65,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "v$VERSION" tcl.exe \
+          gh release create "v$VERSION" tcl.exe build/dist/LICENSE.TXT \
+            "build/dist/tcl16-$VERSION.zip" \
             --target "$GITHUB_SHA" \
             --title "v$VERSION" \
             --generate-notes
