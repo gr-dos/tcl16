@@ -1,10 +1,10 @@
 1
-<unknown>
-<>
+1
 0
 1
-C: Z:
-2
+1
+1
+1
 1:wrong # args: should be "dos option"
 1:bad option "nope": should be drives, kernel, kernelversion, memory, or version
 1:bad option "kern": should be drives, kernel, kernelversion, memory, or version

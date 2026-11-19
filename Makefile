@@ -174,19 +174,30 @@ $(DEV)/FAKEID.COM: tests/tools/fakeid.asm $(TOOLS_ENV)
 	$(WATCOM_ENV) && wasm -q -fo=$(DEV)/fakeid.obj $< && \
 	  wlink option quiet format dos com name $@ file $(DEV)/fakeid.obj
 
-test: $(DEV)/TCL.EXE $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE $(DEV)/FAKEID.COM
-	perl tests/run-dos -e $(DEV)/ERR2OUT.EXE -f $(DEV)/CHILD.EXE \
-	  -f $(DEV)/FAKEID.COM \
-	  $(DEV)/TCL.EXE tests/lang tests/dos tests/tinytcl tests/tcl16
+TEST_TOOLS  = $(DEV)/ERR2OUT.EXE $(DEV)/CHILD.EXE $(DEV)/FAKEID.COM
+RUN_DOS     = perl tests/run-dos -e $(DEV)/ERR2OUT.EXE -f $(DEV)/CHILD.EXE \
+	      -f $(DEV)/FAKEID.COM
+TEST_DIRS   = tests/lang tests/dos tests/tinytcl tests/tcl16
 
-# The dos command on GR-DOS itself, under QEMU (tests/run-grdos): an image
-# with GR-DOS's identification call and GRVER.EXE, such as gr-dos's GRVER
-# test image (its make test-grver). Not part of make test: it needs a
-# gr-dos build, mtools and qemu-system-i386.
+test: $(DEV)/TCL.EXE $(TEST_TOOLS)
+	$(RUN_DOS) $(DEV)/TCL.EXE $(TEST_DIRS) tests/notgrdos
+
+# The same tests on real DOS kernels, booted from a floppy image under
+# QEMU with their own COMMAND.COM (tests/run-dos -b): GR-DOS, with its
+# identification call and GRVER.EXE, and MS-DOS 4.00, both from a gr-dos
+# build (its make test-grver makes these images). Not part of make test:
+# they need a gr-dos build, mtools and qemu-system-i386. QEMU is not an
+# 8086; DOSBox-X's 8086 is make test's.
 GRDOS_IMAGE ?= ../gr-dos/build/linux/tests/grver-grdos.img
+MSDOS_IMAGE ?= ../gr-dos/build/linux/tests/grver-msdos.img
 
-test-grdos: $(DEV)/TCL.EXE
-	perl tests/run-grdos $(GRDOS_IMAGE) $(DEV)/TCL.EXE tests/grdos
+test-grdos: $(DEV)/TCL.EXE $(TEST_TOOLS)
+	WORK=build/run-grdos $(RUN_DOS) -b $(GRDOS_IMAGE) $(DEV)/TCL.EXE \
+	  $(TEST_DIRS) tests/grdos
+
+test-msdos: $(DEV)/TCL.EXE $(TEST_TOOLS)
+	WORK=build/run-msdos $(RUN_DOS) -b $(MSDOS_IMAGE) $(DEV)/TCL.EXE \
+	  $(TEST_DIRS) tests/notgrdos
 
 # The same language tests, with Tiny Tcl built for the host (32-bit int):
 # a reference for what is a 16-bit problem and what is Tiny Tcl's own.
@@ -299,7 +310,7 @@ check-vendor-zip:
 
 clean:
 	rm -rf $(SRC) $(SRC).tmp $(DEV) build/var build/host build/libc16-try \
-	  build/run-dos build/run-grdos build/run-host build/measure
+	  build/run-dos build/run-grdos build/run-msdos build/run-host build/measure
 	rm -rf $(T67_SRC) $(T67_SRC).tmp $(T67_DEV) $(T67)/var \
 	  $(T67)/libc16-try $(T67)/run-dos $(T67)/measure $(T67)/suite \
 	  build/suite
@@ -324,8 +335,9 @@ Tests
   make test           tests/lang, tests/dos, tests/tinytcl and tests/tcl16
                       with build/dev/TCL.EXE under DOSBox-X, on an
                       emulated 8086 (tests/run-dos)
-  make test-grdos     tests/grdos with build/dev/TCL.EXE on GR-DOS under
-                      QEMU, from GRDOS_IMAGE (tests/run-grdos)
+  make test-grdos     make test's cases and tests/grdos on GR-DOS, booted
+                      from GRDOS_IMAGE under QEMU (tests/run-dos -b)
+  make test-msdos     make test's cases on MS-DOS 4.00, from MSDOS_IMAGE
   make test-host      tests/lang with build/host/tclhost (tests/run-host)
   make test-suite     Tcl 6.7's own test suite (from the M2 download) with
                       build/dev/TCL.EXE, against tests/suite/tinytcl.baseline
@@ -363,11 +375,14 @@ Variables
   DOSBOX_TIMEOUT=N    seconds per DOS test case (default 60)
   GRDOS_IMAGE=FILE    GR-DOS floppy image for make test-grdos (default
                       ../gr-dos/build/linux/tests/grver-grdos.img)
+  MSDOS_IMAGE=FILE    MS-DOS 4.00 floppy image for make test-msdos (default
+                      ../gr-dos/build/linux/tests/grver-msdos.img)
+  BOOT_TIMEOUT=N      seconds for a whole booted run (default 900)
 endef
 
 # The assembled sources are made by one rule; make must not delete them.
 .SECONDARY:
 
-.PHONY: all test test-grdos host test-host libc16-try variants measure check-vendor \
+.PHONY: all test test-grdos test-msdos host test-host libc16-try variants measure check-vendor \
         check-vendor-zip clean help tcl67 test-tcl67 libc16-try-tcl67 \
         variants-tcl67 measure-tcl67 test-suite test-suite-tcl67
