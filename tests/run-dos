@@ -14,7 +14,7 @@ run-dos - run Tcl test scripts with a DOS TCL.EXE under DOSBox-X
 
 =head1 SYNOPSIS
 
-  tests/run-dos [-e ERR2OUT.EXE] [-f FILE]... TCL.EXE DIR...
+  tests/run-dos [-e ERR2OUT.EXE] [-f FILE]... [-b IMAGE] TCL.EXE DIR...
 
 =head1 DESCRIPTION
 
@@ -28,10 +28,15 @@ is turned into LF. Comment lines at the top of the script can say:
   # stderr: merged   run under ERR2OUT.EXE (-e), so that standard error
                      goes to standard output and NAME.out has both
   # host: skip       (tests/run-host only) not run with the host build
+  # boot: skip       (-b only) not run on a booted kernel: the case
+                     checks something only DOSBox-X has
 
 Any other file in DIR is a fixture, copied into the work directory
 under its name in upper case, as is each FILE given with C<-f> (a test
 tool, such as F<CHILD.EXE> for the exec cases).
+
+In NAME.out, C<@VERSION@> stands for Tcl16's version, the line in
+F<VERSION>.
 
 A C<# command:> line may redirect standard input from a fixture
 (C<# command: -i E<lt>REPL.IN>); the harness adds C<E<gt>NAME.OUT>.
@@ -49,6 +54,17 @@ normal, cputype 8086, CGA machine) with C: mounted on a work directory
 takes longer than DOSBOX_TIMEOUT seconds. Exits 0 if every case not
 marked todo passes.
 
+With C<-b IMAGE>, the cases run on a real DOS kernel instead: IMAGE, a
+bootable DOS floppy image (GR-DOS, or MS-DOS 4.00 from gr-dos's
+reference build), is copied and booted once in headless
+C<qemu-system-i386>, with a hard disk image as drive C: holding the work
+directory, copied back after the boot, and its F<AUTOEXEC.BAT> replaced by one that runs every
+case in turn with the kernel's own COMMAND.COM, then writes a marker to
+COM1. QEMU is stopped at the marker, or after BOOT_TIMEOUT seconds
+(default 900); cases not reached then did not finish. CONFIG.SYS
+gives FILES=20 (BOOT_FILES): exec needs more than DOS's default 8. QEMU is not an
+8086: the 8086 is DOSBox-X's. IMAGE itself is not changed. Needs mtools.
+
 Environment: DOSBOX (default dosbox-x), DOSBOX_TIMEOUT seconds per case
 (default 60), KEEP=1 to keep the work directory, WORK the work directory.
 
@@ -56,17 +72,30 @@ Adapted from gr-dos/perl16's tests/run-dos.
 
 =cut
 
-my ($err2out, @extra);
-while (@ARGV >= 2 && $ARGV[0] =~ /^-[ef]$/) {
+my ($err2out, $boot, @extra);
+while (@ARGV >= 2 && $ARGV[0] =~ /^-[efb]$/) {
     my ($opt, $val) = splice @ARGV, 0, 2;
-    if ($opt eq '-e') { $err2out = $val } else { push @extra, $val }
+    if ($opt eq '-e') { $err2out = $val }
+    elsif ($opt eq '-b') { $boot = $val }
+    else { push @extra, $val }
 }
 my ($exe, @dirs) = @ARGV;
-die "usage: $0 [-e ERR2OUT.EXE] [-f FILE]... TCL.EXE DIR...\n" unless @dirs;
+die "usage: $0 [-e ERR2OUT.EXE] [-f FILE]... [-b IMAGE] TCL.EXE DIR...\n" unless @dirs;
+die "$boot not found\n" if defined $boot && !-f $boot;
 -f $_ or die "$_ not found\n" for @extra;
 die "$exe not found\n" unless -f $exe;
 die "$err2out not found\n" if defined $err2out && !-f $err2out;
 my $dosbox = $ENV{DOSBOX} // 'dosbox-x';
+# @VERSION@ in an expected output is Tcl16's version, VERSION's line.
+my $version = do {
+    my $f = File::Spec->catfile(File::Basename::dirname(__FILE__), '..', 'VERSION');
+    open my $h, '<', $f or die "$f: $!\n";
+    my $v = <$h>;
+    close $h;
+    die "$f is empty\n" unless defined $v;
+    $v =~ s/\s+\z//;
+    $v;
+};
 my $timeout = $ENV{DOSBOX_TIMEOUT} // 60;
 
 my $work = File::Spec->rel2abs($ENV{WORK} // 'build/run-dos');
@@ -92,6 +121,7 @@ for my $dir (@dirs) {
             $case{command} = "TCL $1" if /^#\s*command:\s*(.+?)\s*$/;
             $case{todo}    = $1 if /^#\s*todo:\s*(.+?)\s*$/;
             $case{merged}  = 1 if /^#\s*stderr:\s*merged\s*$/;
+            $case{skip}    = 1 if defined $boot && /^#\s*boot:\s*skip\s*$/;
         }
         if ($case{merged}) {
             die "$t: # stderr: merged needs -e ERR2OUT.EXE\n"
@@ -100,7 +130,7 @@ for my $dir (@dirs) {
         }
         (my $exp = $t) =~ s/\.tcl$/.out/;
         die "$t: no $exp\n" unless -f $exp;
-        $case{expect} = slurp($exp);
+        $case{expect} = slurp($exp) =~ s/\@VERSION\@/$version/gr;
         copy($t, "$work/$name.TCL") or die "copy $t: $!\n";
         push @cases, \%case;
     }
@@ -121,52 +151,134 @@ for my $dir (@dirs) {
     }
 }
 
-# Exit status N passes when errorlevel >= N and not >= N + 1.
-open my $cnf, '>', "$work/DOSBOX.CNF";
-print $cnf <<~"END";
-  [sdl]
-  output=surface
-  [dosbox]
-  machine=cga
-  [cpu]
-  core=normal
-  cputype=8086
-  [autoexec]
-  mount c "$work"
-  c:
-  call RUN.BAT
-  exit
-  END
-close $cnf;
-
-for my $c (@cases) {
+# A case's lines of a batch file: exit status N passes when errorlevel
+# >= N and not >= N + 1. The labels are numbered: COMMAND.COM reads only
+# a label's first 8 characters.
+sub batch ($c, $i) {
     my ($n, $st) = @$c{qw(name status)};
-    my @bat = ('@echo off', "$c->{command} >$n.OUT");
-    push @bat, sprintf 'if errorlevel %d goto f', $st + 1 if $st < 255;
-    push @bat, "if not errorlevel $st goto f";
-    push @bat, "echo ok >$n.RC", 'goto d', ':f', "echo bad >$n.RC", ':d';
-    open my $b, '>:raw', "$work/RUN.BAT";
-    print $b map { "$_\r\n" } @bat;
-    close $b;
+    my @bat = ("$c->{command} >$n.OUT");
+    push @bat, sprintf 'if errorlevel %d goto f%d', $st + 1, $i if $st < 255;
+    push @bat, "if not errorlevel $st goto f$i";
+    push @bat, "echo ok >$n.RC", "goto d$i", ":f$i", "echo bad >$n.RC", ":d$i";
+    return @bat;
+}
 
-    local $ENV{SDL_VIDEODRIVER} = 'dummy';
-    local $ENV{SDL_AUDIODRIVER} = 'dummy';
-    my $rc = system('sh', '-c', 'exec "$@" >"$0" 2>&1', "$work/$n.LOG",
-        'timeout', '-s', 'KILL', $timeout,
-        $dosbox, '-nogui', '-nomenu', '-conf', "$work/DOSBOX.CNF");
-    $c->{timedout} = 1 if $rc >> 8 == 137;
+# A 20 MB disk image (40 cylinders, 16 heads, 63 sectors) with one
+# FAT16 partition from sector 63. Its boot sector's OEM name is MS-DOS's:
+# MS-DOS ignores the BPB of a disk whose name it does not know.
+sub make_disk ($hd) {
+    my ($sectors, $start) = (40 * 16 * 63, 63);
+    my $size = $sectors - $start;
+    open my $h, '>:raw', $hd;
+    my $mbr = "\0" x 446
+        . pack('C8 V2', 0x80, 1, 1, 0, 0x04, 15, 0xFF, 39, $start, $size)
+        . "\0" x 48 . "\x55\xAA";
+    print $h $mbr, "\0" x (($sectors - 1) * 512);
+    close $h;
+    system('mformat', '-i', "$hd\@\@" . $start * 512, '-T', $size,
+        '-h', 16, '-s', 63, '-H', $start, '::') == 0
+        or die "mformat failed\n";
+    open $h, '+<:raw', $hd;
+    seek $h, $start * 512 + 3, 0;
+    print $h 'MSDOS4.0';
+    close $h;
+}
+
+sub dosfile ($f, @lines) {
+    open my $b, '>:raw', $f;
+    print $b map { "$_\r\n" } @lines;
+    close $b;
+}
+
+my @run = grep { !$_->{skip} } @cases;
+if (defined $boot) {
+    # One boot: every case in turn, then the marker on COM1. C: is a
+    # 20 MB FAT16 disk image made here: the work directory is copied onto
+    # it before the boot and back after.
+    dosfile("$work/RUN.BAT", '@echo off',
+        map { batch($run[$_], $_) } 0 .. $#run);
+    my $base = File::Spec->rel2abs("$work/..") . '/' . basename($work);
+    my ($floppy, $hd, $serial) = ("$base-a.img", "$base-c.img", "$base.serial");
+    copy($boot, $floppy) or die "copy $boot: $!\n";
+    dosfile("$base.bat", '@ECHO OFF', 'C:', 'CALL RUN.BAT', 'ECHO TCL16-END >AUX');
+    dosfile("$base.sys", 'FILES=' . ($ENV{BOOT_FILES} // 20));
+    for (["$base.bat", 'AUTOEXEC.BAT'], ["$base.sys", 'CONFIG.SYS']) {
+        system('mcopy', '-o', '-i', $floppy, $_->[0], "::/$_->[1]") == 0
+            or die "mcopy $_->[1] failed\n";
+    }
+    unlink "$base.bat", "$base.sys";
+    make_disk($hd);
+    my $part = "$hd\@\@" . 63 * 512;
+    system('mcopy', '-i', $part, glob("$work/*"), '::/') == 0
+        or die "mcopy to C: failed\n";
+    unlink $serial;
+    my $btimeout = $ENV{BOOT_TIMEOUT} // 900;
+    my $pid = fork // die "fork: $!\n";
+    if ($pid == 0) {
+        open STDOUT, '>', "$base.log";
+        open STDERR, '>&', \*STDOUT;
+        exec 'qemu-system-i386', -display => 'none', -m => 4, '-no-reboot',
+            -drive => "file=$floppy,if=floppy,index=0,format=raw",
+            -drive => "file=$hd,if=ide,index=0,format=raw",
+            -boot => 'a', -serial => "file:$serial", -monitor => 'none'
+            or die "exec qemu-system-i386: $!\n";
+    }
+    my $deadline = time + $btimeout;
+    while (time < $deadline) {
+        last if -f $serial && slurp($serial) =~ /^TCL16-END/m;
+        last if waitpid($pid, 1) == $pid;
+        sleep 1;
+    }
+    $_->{timedout} = 1 for @run;
+    kill 'TERM', $pid;
+    waitpid $pid, 0;
+    system('mcopy', '-o', '-n', '-i', $part, '::/*', "$work/") == 0
+        or die "mcopy from C: failed\n";
+    unlink $floppy, $hd, $serial, "$base.log" unless $ENV{KEEP};
+} else {
+    open my $cnf, '>', "$work/DOSBOX.CNF";
+    print $cnf <<~"END";
+      [sdl]
+      output=surface
+      [dosbox]
+      machine=cga
+      [cpu]
+      core=normal
+      cputype=8086
+      [autoexec]
+      mount c "$work"
+      c:
+      call RUN.BAT
+      exit
+      END
+    close $cnf;
+
+    for my $c (@run) {
+        dosfile("$work/RUN.BAT", '@echo off', batch($c, 0));
+        local $ENV{SDL_VIDEODRIVER} = 'dummy';
+        local $ENV{SDL_AUDIODRIVER} = 'dummy';
+        my $rc = system('sh', '-c', 'exec "$@" >"$0" 2>&1', "$work/$c->{name}.LOG",
+            'timeout', '-s', 'KILL', $timeout,
+            $dosbox, '-nogui', '-nomenu', '-conf', "$work/DOSBOX.CNF");
+        $c->{timedout} = 1 if $rc >> 8 == 137;
+    }
 }
 # DOSBox-X may give a file it made any case.
 my %dosfile = map { uc(basename($_)) => $_ } glob "$work/*";
 
-my ($pass, $fail, $todo) = (0, 0, 0);
+my ($pass, $fail, $todo, $skip) = (0, 0, 0, 0);
 for my $c (@cases) {
     my $n = $c->{name};
+    if ($c->{skip}) {
+        $skip++;
+        say "skip  $n";
+        next;
+    }
     my @why;
     my $rc = $dosfile{"$n.RC"};
     my $out = $dosfile{"$n.OUT"};
     if (!defined $rc) {
-        push @why, $c->{timedout} ? "timed out after ${timeout}s" : "did not finish";
+        push @why, $c->{timedout} && !defined $boot ? "timed out after ${timeout}s" : "did not finish";
     } else {
         push @why, "exit status is not $c->{status}"
             unless slurp($rc) =~ /^ok/;
@@ -193,6 +305,7 @@ for my $c (@cases) {
         say "FAIL  $n: ", join('; ', @why);
     }
 }
-say "$pass passed, $fail failed, $todo todo (work directory $work)";
+say "$pass passed, $fail failed, $todo todo", ($skip ? ", $skip skipped" : ''),
+    " (work directory $work)";
 remove_tree($work) unless $fail || $ENV{KEEP};
 exit($fail ? 1 : 0);

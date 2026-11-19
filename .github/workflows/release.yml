@@ -1,0 +1,72 @@
+name: release
+
+# main only changes by merging a PR, so a push to main is a merge.
+# If VERSION names a version without a tag, build and test that merge
+# commit, tag it v<VERSION> and publish a release with tcl.exe, the
+# license notices it needs (LICENSE.TXT) and a zip of both attached
+# (README.md, "Releasing").
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check version
+        id: version
+        run: |
+          version=$(cat VERSION)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "releasing v$version"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # make fetches the pinned libc16 and libkitchen16 releases and the
+      # Open Watcom snapshot libc16 names; the snapshot is cached per pin.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.version.outputs.new == 'true'
+        with:
+          path: build/tools
+          key: libc16-tools-ubuntu-24.04-${{ hashFiles('scripts/fetch-libc16') }}
+
+      - name: Install DOSBox-X and patch
+        if: steps.version.outputs.new == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dosbox-x patch
+
+      - name: Build and test
+        if: steps.version.outputs.new == 'true'
+        run: |
+          make check-vendor
+          make
+          make test
+          make dist
+          cp build/dev/TCL.EXE tcl.exe
+
+      - name: Create release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" tcl.exe build/dist/LICENSE.TXT \
+            "build/dist/tcl16-$VERSION.zip" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes

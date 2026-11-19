@@ -1,0 +1,5 @@
+# A 30,000-byte string (tests/tcl16/lowmem).
+set s {}
+set chunk [format %1000s x]
+for {set i 0} {$i < 30} {incr i} {append s $chunk}
+puts [string length $s]

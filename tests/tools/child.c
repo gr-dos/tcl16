@@ -16,6 +16,11 @@
  *             close K of them, and run PROG with the ARGs (spawnv), so
  *             that PROG starts with only K free handles; exit with its
  *             status (tests/tcl16/execfd)
+ *   -l K PROG ARG...
+ *             take conventional memory until the largest free block is
+ *             K KB, run PROG with the ARGs (spawnv), and exit with its
+ *             status, or 9 with a message on standard output if it could
+ *             not be run (tests/tcl16/lowmem)
  *
  * A test tool, built with libc16 in the small model; never part of a
  * release.
@@ -25,6 +30,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <io.h>
 #include <process.h>
 #include <libc16.h>
@@ -89,6 +95,33 @@ main(int argc, char **argv)
 		close(held[--n]);
 	    }
 	    return spawnv(P_WAIT, argv[i + 2], argv + i + 2);
+	} else if (strcmp(argv[i], "-l") == 0 && i + 2 < argc) {
+	    union REGS r;
+	    unsigned want = (unsigned) atoi(argv[i + 1]) * 64;	/* paragraphs */
+	    int rc;
+
+	    r.h.ah = 0x48;
+	    r.x.bx = 0xFFFF;
+	    intdos(&r, &r);
+	    if (r.x.bx > want) {
+		r.x.bx -= want;
+		r.h.ah = 0x48;
+		intdos(&r, &r);
+		if (r.x.cflag) {
+		    out(1, "CHILD: cannot take memory\r\n");
+		    return 9;
+		}
+	    }
+	    rc = spawnv(P_WAIT, argv[i + 2], argv + i + 2);
+	    if (rc < 0) {
+		out(1, "CHILD: cannot run ");
+		out(1, argv[i + 2]);
+		out(1, ": ");
+		out(1, strerror(errno));
+		out(1, "\r\n");
+		return 9;
+	    }
+	    return rc;
 	}
     }
     return status;
