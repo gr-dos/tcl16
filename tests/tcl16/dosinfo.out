@@ -1,0 +1,15 @@
+1
+<unknown>
+<>
+0
+1
+C: Z:
+2
+1:wrong # args: should be "dos option"
+1:bad option "nope": should be drives, kernel, kernelversion, memory, or version
+1:bad option "kern": should be drives, kernel, kernelversion, memory, or version
+1:wrong # args: should be "dos version"
+1:wrong # args: should be "dos kernel"
+1:wrong # args: should be "dos kernelversion"
+1:wrong # args: should be "dos memory"
+1:wrong # args: should be "dos drives"

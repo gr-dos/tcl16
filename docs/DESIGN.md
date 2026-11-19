@@ -1,7 +1,7 @@
 # Tcl16 Design
 
 **Project:** `gr-dos/tcl16`  
-**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE` and M5 DOS integration complete; M6 next  
+**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE`, M5 DOS integration and M6 DOS/GR-DOS introspection complete; M7 next  
 **Target:** Real-mode, 16-bit DOS, including GR-DOS and compatible DOS implementations
 
 ## 1. Purpose
@@ -217,19 +217,19 @@ Use the proposed **GR-DOS kernel identification/version API** (tracked in [`gr-d
 
 Tcl16 must also work on non-GR-DOS kernels. A missing identification API should yield a normal, documented "unknown / not GR-DOS" result rather than a fatal error.
 
-Possible commands (names provisional):
+The API exists since gr-dos/gr-dos#46 closed: INT 21h AX=3347h, BX=4752h, with a nonce in DX (gr-dos's `docs/grver.md`). M6 implemented these commands, as one command with options (`src/dosinfo.c`; COMPATIBILITY.md, section 7):
 
 ```tcl
-dos::version
-dos::kernel
-dos::kernelversion
-dos::memory
-dos::drives
+dos version          ;# the MS-DOS version DOS reports, n.nn
+dos kernel           ;# GR-DOS, or unknown
+dos kernelversion    ;# GR-DOS's release, n.nn, or empty
+dos memory           ;# the largest free block, in bytes
+dos drives           ;# A: C: ...
 ```
 
-In Tcl 6.7, these would be registered as literal command names, **not** namespace-qualified commands. Choose the final naming convention in M6 after assessing compatibility and usability; simple `dos_version`-style names are an alternative. Avoid adding DOS interrupt wrappers indiscriminately: prefer small, well-specified operations.
+**Naming, settled in M6: one `dos` command with options.** The provisional `dos::version` names would be literal names in Tcl 6.7, and would suggest namespaces it does not have; `dos_version`-style names would put five names in the global table, beside a script's own procs. One command with options is what Tcl 6.7 does itself (`file`, `info`, `string`). Options are given in full, since `kernel` is a prefix of `kernelversion`. Each option is one INT 21h call (two for the identification), with no arguments.
 
-Future feature detection should prefer explicit API capabilities over assumptions based solely on a GR-DOS release number.
+Recognition follows GR-DOS's `GRVER`: two calls, nonces 5A3Ch and C3A5h, each answer checked (signature, complemented nonce, revision at least 1, minor at most 99) and the two the same. Anything else is `unknown`, not an error. The API revision is not exposed: revision 1 adds nothing to the version, and its capability byte is reserved. Future feature detection should prefer explicit API capabilities over assumptions based solely on a GR-DOS release number; an option for them belongs with the first capability a script can use.
 
 ### 8.3 Deferred capabilities
 
@@ -247,7 +247,8 @@ tcl16/
 │                            REPL), dostext.c and source.c (DOS text, source),
 │                            stack.c (stack guard), probe.c (measurement only),
 │                            tcl67main.c (M1/M2 driver, M2 reference build);
-│                            the rest of the DOS layer (M5, M6) is added here
+│                            the DOS layer: file.c, glob.c, exec.c (M5),
+│                            dosinfo.c (M6)
 ├── vendor/
 │   ├── tinytcl-6.8.1/       Tiny Tcl, unmodified, with its manifest
 │   └── LICENSE.tinytcl
@@ -259,7 +260,9 @@ tcl16/
 │   ├── tinytcl/             Tiny Tcl-specific cases
 │   ├── tcl16/               TCL.EXE's command line, REPL and DOS text
 │   ├── tcl67/               M2 reference cases
-│   ├── tools/               DOS test tools (FREEMEM, ERR2OUT)
+│   ├── grdos/               cases run on GR-DOS itself (make test-grdos)
+│   ├── tools/               DOS test tools (FREEMEM, ERR2OUT, CHILD,
+│   │                        FAKEID...)
 │   ├── suite/               baselines for Tcl 6.7's own test suite
 │   └── probe/               measurement scripts
 └── docs/
@@ -282,7 +285,7 @@ Test the Tiny Tcl-based `TCL.EXE` with the shared suites, recording precise buil
 
 **DOS behavior:** paths with drive letters and backslashes, file enumeration, open/read/write/close, CRLF and ^Z scripts, environment variables, command-line arguments, redirection, shell builtins vs executables, exit codes, and low-memory execution.
 
-**Memory and portability:** very small free conventional memory, repeated allocations, nested procedures, 64 KiB boundaries, stack exhaustion, clean shutdown, 8086 compatibility, GR-DOS and at least one non-GR-DOS kernel.
+**Memory and portability:** very small free conventional memory, repeated allocations, nested procedures, 64 KiB boundaries, stack exhaustion, clean shutdown, 8086 compatibility, GR-DOS and at least one non-GR-DOS kernel. `make test` runs on DOSBox-X's kernel; `make test-grdos` (M6) boots a GR-DOS image under QEMU and runs `tests/grdos` there.
 
 **Performance:** executable size, resident memory before/after initialization, peak script memory, startup time, representative script runtime, and ability to launch a child program. Clearly distinguish measured values from estimates.
 
@@ -311,8 +314,8 @@ A milestone that adds a todo or a baseline entry must state why and when it is d
 | M3 | Documented interpreter selection, architecture and supported-language baseline | **Done** ([ADR-001](ADR-001-tcl-implementation.md); this document) |
 | M4 | Interactive and script-mode `TCL.EXE`, CLI and error conventions | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md)) |
 | M5 | DOS filesystem, environment, and process integration | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md), sections 5 and 6) |
-| M6 | DOS/GR-DOS introspection using #46 when available | Next |
-| M7 | 8086, memory, compatibility, packaging, examples, and release validation | Planned |
+| M6 | DOS/GR-DOS introspection using #46 when available | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md), section 7) |
+| M7 | 8086, memory, compatibility, packaging, examples, and release validation | Next |
 
 All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 
@@ -334,10 +337,11 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 - `exec` (`src/exec.c`), as in section 8.1: programs through `spawnve`, batch files and COMMAND.COM's own commands through `COMSPEC /C`, pipes through temporary files, standard input from NUL. Memory recovery is a documented limit (section 12).
 - All of Tcl 6.7's suite runs, with Tcl16's own `CAT`, `WC` and `PWD` (`tests/tools`), and `tests/suite/tinytcl.baseline` holds only justified entries.
 
-### M6: DOS and GR-DOS introspection
+### M6: DOS and GR-DOS introspection (done)
 
-- The commands of section 8.2, their final names, and "unknown / not GR-DOS" on other kernels.
-- GR-DOS identification through gr-dos/gr-dos#46 when that API exists. Until then, only the generic DOS facts.
+- The `dos` command (`src/dosinfo.c`): `version`, `kernel`, `kernelversion`, `memory` and `drives`, as section 8.2 settles them, with `unknown` and an empty version on kernels that are not GR-DOS.
+- GR-DOS identification through gr-dos/gr-dos#46's INT 21h AX=3347h, checked as GR-DOS's `GRVER` checks it.
+- `tests/tcl16/dosinfo` on DOSBox-X; `tests/tcl16/dosgr` with `FAKEID.COM` (`tests/tools/fakeid.asm`, after gr-dos's), which imitates GR-DOS's answer and six wrong ones; `make test-grdos` (`tests/run-grdos`), on GR-DOS itself under QEMU, against `GRVER`.
 
 ### M7: Validation and release
 
@@ -358,14 +362,15 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 - **Floating point: libkitchen16's software floating point**, for every machine, 8087 or not. A float `expr` costs about 51 ms more than an integer one at 4.77 MHz (`fexpr1000` 1,467 ticks against `expr1000` 532), slower than Open Watcom's emulator (35 ms) and much slower than an 8087 (8 ms; M1-REPORT.md, 7.5). Integer work got faster in the same build (`expr1000` 606 to 532 ticks, `fib15` 1,384 to 1,274). Tcl 6's `expr` keeps integers as integers, so only scripts that ask for floating point pay.
 - **Formatting: libkitchen16** (section 5).
 
+**Settled in M6:** DOS and GR-DOS introspection, one `dos` command with options, using gr-dos/gr-dos#46's identification call (section 8.2).
+
 **Open engineering decisions,** each to be settled by the milestone named, with measurements:
 
 | Decision | Options and constraints | Milestone |
 | --- | --- | --- |
 | 16-bit stack and object limits | **Stack size settled in M4: 48 KB** (below). Still open: moving large local buffers to the heap, and whether the 32 KB stops can become Tcl errors | M7 (limits) |
 | Remaining libc16 gaps | `fopen`'s update modes (section 10.1) | M7 |
-| DOS/GR-DOS introspection | Command names and behaviour; depends on gr-dos/gr-dos#46 | M6 |
-| Minimum RAM and supported upper bounds | 152 KB at start (M5); about 400 KB for the heaviest measured workload | M7 |
+| Minimum RAM and supported upper bounds | 152 KB at start (M5), 154 KB with M6's `dos` (1.6 KB); about 400 KB for the heaviest measured workload | M7 |
 
 **Stack size (settled in M4).** `TCL.EXE` links with a 48 KB stack (`make`'s `STACK`). `make measure` on DOSBox-X's emulated 8086:
 

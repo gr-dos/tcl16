@@ -14,7 +14,7 @@
  * implemented by Tiny Tcl 6.8.1.
  */
 
-#define TCL16_VERSION "development build (M5)"
+#define TCL16_VERSION "development build (M6)"
 
 /*
  * The longest command TCL.EXE assembles from lines, from a script read

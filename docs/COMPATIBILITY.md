@@ -13,7 +13,8 @@ Tcl16 is **Tcl 6.7**, as implemented by **Tiny Tcl 6.8.1**
 (`patches/`). `info tclversion` is `6.7`. It is not Tcl 7 or Tcl 8, and
 not a subset of either.
 
-Its 60 commands (M1-REPORT.md, section 3.2):
+Its 62 commands: Tiny Tcl's 60 (M1-REPORT.md, section 3.2), and Tcl16's
+`exec` and `dos`:
 
 - **Tcl 6.7 core (42):** `append array break case catch concat continue
   error eval expr for foreach format global glob if incr info join
@@ -24,6 +25,7 @@ Its 60 commands (M1-REPORT.md, section 3.2):
   seek source tell`
 - **TclX 6 (4):** `cmdtrace infox loop readdir`
 - **Processes (1):** `exec`, from M5 (section 6)
+- **DOS (1):** `dos`, from M6 (section 7)
 
 The tests in `tests/lang` run the same on DOS and with Tiny Tcl built for
 a 32-bit host (`make test-host`); Tcl 6.7's own test suite runs against
@@ -46,7 +48,8 @@ These need changes (M1-REPORT.md, section 9; `tests/lang`):
   errors (`tests/tcl16/topbreak`).
 
 `exec` (section 6) and `file delete`, `mkdir` and `rename` (section 5)
-are Tcl16 additions from M5, with the syntax Tcl 7 gave them.
+are Tcl16 additions from M5, with the syntax Tcl 7 gave them. `dos`
+(section 7) is Tcl16's own, from M6: no Tcl has it.
 
 ## 2. Real-mode limits
 
@@ -71,7 +74,7 @@ Tcl_Eval (out of stack)", which `catch` can trap.
 
 | Open files | 5 at once, besides stdin, stdout and stderr (libc16's 8 streams) | `tests/tcl16/openmax` |
 
-Memory: `TCL.EXE` (libc16 build, M5) takes about 152 KB of conventional
+Memory: `TCL.EXE` (libc16 build, M6) takes about 154 KB of conventional
 memory at start, stack included, and about 400 KB after the heaviest
 workload measured (`make measure`). Its heap never returns memory to
 DOS, so `unset` frees memory for Tcl's reuse, not for DOS, and not for a
@@ -260,7 +263,7 @@ On DOS:
   not given back to DOS for the program. A program that needs more than
   is left fails with `couldn't execute "NAME": ` and libc16's message
   for DOS's error. A program run by a script that has just started gets
-  about 431 KB (441,264 bytes) of DOSBox-X's 589 KB (DESIGN.md, section
+  about 427 KB (437,520 bytes, M6) of DOSBox-X's 589 KB (DESIGN.md, section
   12).
 - **Exit status.** DOS keeps a program's status modulo 256.
 - **Handles.** A DOS program has 20 handles. If `exec` cannot make its
@@ -268,7 +271,47 @@ On DOS:
   is an error ("Too many open files"), nothing is run, and Tcl's own
   standard handles are left as they were (`tests/tcl16/execfd`).
 
-## 7. Other differences
+## 7. DOS and GR-DOS: `dos`
+
+`dos OPTION` tells a script what it runs on. The option is given in
+full, and takes no arguments:
+
+| Command | Result | On DOSBox-X | On GR-DOS 0.04 (QEMU) |
+|---|---|---|---|
+| `dos version` | The MS-DOS version DOS reports (INT 21h 30h), `n.nn` | `5.00` | `4.00` |
+| `dos kernel` | `GR-DOS` if the kernel is GR-DOS; otherwise `unknown` | `unknown` | `GR-DOS` |
+| `dos kernelversion` | GR-DOS's release version, `n.nn`; an empty string if the kernel is not GR-DOS | (empty) | `0.04` |
+| `dos memory` | The largest free block of conventional memory, in bytes: what a program `exec` runs can have (section 6) | `445232` at start | `413088` at start |
+| `dos drives` | The drives DOS knows, as a list | `C: Z:` | `A: B:` |
+
+- **GR-DOS** is recognized by its identification call, INT 21h
+  AX=3347h (gr-dos/gr-dos#46, gr-dos's `docs/grver.md`), made twice
+  with two nonces, as GR-DOS's `GRVER` makes it. `dos kernelversion` is
+  what `GRVER` prints. On any other DOS, or a GR-DOS kernel built without
+  the call (the 0.04 release images were made before it), `dos kernel` is `unknown` and
+  `dos kernelversion` empty: neither is an error. An answer with
+  GR-DOS's signature that fails a check is `unknown` too.
+- **`dos version` is not the kernel's version.** GR-DOS reports MS-DOS
+  4.00 there, whatever its own release; use `dos kernelversion` for that.
+  Test for GR-DOS with `[dos kernel] == "GR-DOS"`: other kernels may be
+  named in later versions, so do not test for `unknown`.
+- **`dos memory`** is DOS's answer at the moment it is asked (INT 21h 48h,
+  BX=FFFFh). It never grows while a script runs, since Tcl's heap never
+  shrinks (section 2).
+- **`dos drives`** lists each drive letter DOS accepts, `A:` to `Z:`
+  (INT 21h 29h). It does not read the drives: an empty floppy drive is
+  listed, and on a machine with one floppy drive `B:` is listed too, as
+  DOS's other name for it.
+- `dos` has one name, and options, as `file` and `info` have, rather
+  than names such as `dos::version`: Tcl 6.7 has no namespaces, and a
+  `::` in a name would suggest it has.
+
+Tests: `tests/tcl16/dosinfo` (DOSBox-X), `tests/tcl16/dosgr` (GR-DOS's
+answer, and wrong ones, imitated by `FAKEID.COM`,
+`tests/tools/fakeid.asm`), and `tests/grdos/kernel` (`make test-grdos`:
+GR-DOS itself, under QEMU, compared with `GRVER`).
+
+## 8. Other differences
 
 - Floating point in `expr`, `format` and `scan` is libkitchen16's
   software floating point, in every build: it does not use an 8087 even
