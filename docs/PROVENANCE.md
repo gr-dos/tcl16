@@ -209,7 +209,7 @@ libc16 (DESIGN.md, section 4).
 
 | Input | Pin |
 |---|---|
-| libc16 | release 0.17, `libc16-0.17.zip`, SHA-256 `@LIBC16_SHA@` (`scripts/fetch-libc16`; M7; M5 pinned 0.15, M4 0.07, M1 to M3 0.04) |
+| libc16 | release 0.17, `libc16-0.17.zip`, SHA-256 `ad4e39263a8468f39275ddeae7651bfbaf4381e315b3642d0ed88b7bd2528645` (`scripts/fetch-libc16`; M7; M5 pinned 0.15, M4 0.07, M1 to M3 0.04) |
 | libkitchen16 | release 0.02, `libkitchen16-0.02.zip`, SHA-256 `2ca356b7d2a23442b7851b10c09cfa577ee3888eaf5b4b899f10ee494162cb85` (`scripts/fetch-libkitchen16`; M5) |
 | Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 names (its `tools/fetch-watcom`; unchanged from 0.04 to 0.17). Since M5 only its compiler and linker are used for `TCL.EXE`; the M2 reference build still links its runtime |
 | DOSBox-X | the host's package, for the tests and measurements only |
