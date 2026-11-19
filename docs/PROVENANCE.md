@@ -183,13 +183,16 @@ Tcl 6.7's interpreter core.
 and `src/dosenv.c` (`file`, `glob`, `exec`, `scan`, directories and the
 environment over libc16, M5; `glob.c` replaces Tiny Tcl's `tcldosgl.c`,
 which is not built),
+`src/dosinfo.c` (the `dos` command, M6),
 `src/tcl16.h`, `src/stack.c` (the stack guard), `src/probe.c` (the
 `m1probe` measurement command), `src/tcl67main.c` (the M1/M2 test
 driver, kept for the M2 reference build), `scripts/`, `tests/` and
 `docs/` are written for tcl16. `tests/run-dos` is adapted from
 gr-dos/perl16's `tests/run-dos`, and `tests/tools/err2out.c` is
 perl16's; `tests/tools/child.c`, `cat.c`, `wc.c` and `pwd.c` are
-tcl16's (M5). `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
+tcl16's (M5). `tests/tools/fakeid.asm` (M6) is adapted from gr-dos's
+`tests/grver/fakeid.asm`, and `tests/run-grdos` boots GR-DOS as gr-dos's
+`scripts/smoke-test` does. `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
 with the 0.15 pin, and `scripts/fetch-libkitchen16` libkitchen16's
 `consumers/fetch-libkitchen16` with the 0.02 pin.
 

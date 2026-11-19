@@ -6,7 +6,7 @@ with Open Watcom on Linux, for GR-DOS and other DOS kernels. It is not
 compatible with Tcl 7 or Tcl 8. The plan is in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: M5 is done; M6 is next.** There is no release yet.
+**Status: M6 is done; M7 is next.** There is no release yet.
 
 - **M1** evaluated Tiny Tcl 6.8.1:
   [`docs/M1-REPORT.md`](docs/M1-REPORT.md).
@@ -22,14 +22,17 @@ compatible with Tcl 7 or Tcl 8. The plan is in
 - **M5** linked `TCL.EXE` with libc16 and libkitchen16 instead of Open
   Watcom's runtime, and added DOS paths in `file`, case-insensitive
   `glob`, `file delete`/`mkdir`/`rename` and `exec`.
+- **M6** added the `dos` command: the DOS version, the kernel (GR-DOS,
+  through its identification call, or `unknown`), GR-DOS's release, free
+  memory and drives (COMPATIBILITY.md, section 7).
 
 Today's `TCL.EXE` is still a development build: Tiny Tcl with Tcl16's
 patches and DOS layer, linked with libc16 and libkitchen16. It passes
 the language, DOS and command-line tests on an emulated 8086, and Tcl
 6.7's own suite apart from documented DOS deviations, with one known
 failure scheduled to be fixed (`open`'s `r+`, `w+` and `a+`; DESIGN.md,
-section 10.1). M6 and M7 add GR-DOS introspection, validation on real
-DOS kernels and the release (DESIGN.md, section 11).
+section 10.1). M7 adds validation on real hardware and other DOS
+kernels, and the release (DESIGN.md, section 11).
 The inputs are in [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
 The Tcl 6.7 DOS port is kept only as reference material from M2. Its
@@ -43,6 +46,7 @@ gcc with `-m32` (on Debian or Ubuntu, `gcc-multilib`).
 
     make                # build/dev/TCL.EXE, the development build
     make test           # tests/lang, dos, tinytcl, tcl16 under DOSBox-X, emulated 8086
+    make test-grdos     # tests/grdos on GR-DOS under QEMU
     make host           # Tiny Tcl built for Linux, as a 32-bit-int reference
     make test-host      # tests/lang with the host build
     make libc16-try     # build against libc16; report what it lacks
@@ -57,6 +61,11 @@ The M2 reference build of the Tcl 6.7 DOS port:
     make test-tcl67     # tests/lang, tests/dos, tests/tcl67 with it
     make test-suite-tcl67   # Tcl 6.7's own test suite with it
     make libc16-try-tcl67 measure-tcl67   # the M2 experiment and measurements
+
+`make test-grdos` also needs mtools, `qemu-system-i386` and a GR-DOS
+floppy image with the identification call and `GRVER.EXE`: by default
+`../gr-dos/build/linux/tests/grver-grdos.img`, which gr-dos's
+`make test-grver` makes; set `GRDOS_IMAGE` for another.
 
 `make` fetches and checks the pinned libc16 and libkitchen16 releases
 (`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`) and the Open
@@ -90,7 +99,13 @@ test suite.
 End the REPL with `exit` or Ctrl-Z. An uncaught error in a script
 prints `Error:` and where it happened on standard error, and exits
 with status 1. Scripts may have DOS (CR LF) line ends and a trailing
-^Z. The dialect is Tcl 6.7: for example, `expr` takes one argument, so
+^Z. A script can ask what it runs on:
+
+    if {[dos kernel] == "GR-DOS"} {
+        puts "GR-DOS [dos kernelversion], [dos memory] bytes free"
+    }
+
+The dialect is Tcl 6.7: for example, `expr` takes one argument, so
 brace it (`expr {$x * 2}`), and there is no `switch` (use `case`).
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) has the details.
 
