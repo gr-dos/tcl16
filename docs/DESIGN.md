@@ -1,7 +1,7 @@
 # Tcl16 Design
 
 **Project:** `gr-dos/tcl16`  
-**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE`, M5 DOS integration and M6 DOS/GR-DOS introspection complete; M7 next  
+**Status:** M1 and M2 evaluated; M3 interpreter selection complete ([ADR-001](ADR-001-tcl-implementation.md)); M4 `TCL.EXE`, M5 DOS integration, M6 DOS/GR-DOS introspection and M7 validation and release 0.01 complete  
 **Target:** Real-mode, 16-bit DOS, including GR-DOS and compatible DOS implementations
 
 ## 1. Purpose
@@ -35,9 +35,9 @@ The M2 port's evaluation is kept as reference, not as a second product: `docs/M2
 
 - **CPU:** 8086/8088 minimum; no required 286/386 instructions.
 - **Execution:** 16-bit DOS real mode. No required DOS extender, DPMI host, or protected-mode runtime.
-- **DOS:** Aim for DOS 2.0 and later, subject to verifying actual APIs and utility dependencies. Run on GR-DOS and other compatible kernels.
+- **DOS:** Aim for DOS 2.0 and later, subject to verifying actual APIs and utility dependencies. Run on GR-DOS and other compatible kernels. Validated in M7 on DOSBox-X's DOS, MS-DOS 4.00 and GR-DOS 0.04 (COMPATIBILITY.md, section 8).
 - **Compiler:** Open Watcom C, following the established GR-DOS toolchain practices.
-- **C runtime:** `libc16` (section 4). The development build links Open Watcom's runtime, because libc16 lacks functions Tiny Tcl needs: about twenty in 0.04 (M1-REPORT.md, section 6), fewer since 0.06 (section 4.2). Closing that gap is planned work (sections 11 and 12), not a reason to keep Open Watcom's runtime.
+- **C runtime:** `libc16` (section 4), with libkitchen16 for formatting and floating point (section 5). Since M5 `TCL.EXE` links no Open Watcom runtime; since M7 libc16 has everything Tiny Tcl needs (section 4.2).
 - **Memory model:** Large. M1 found no object needs the huge model, because sizes stop at 32 KB. Change only for measured technical reasons.
 - **Optional libraries:** Do not require `libkitchen16` or a full C `printf` merely to provide basic Tcl functionality.
 - **Build reproducibility:** Pin tool versions and dependencies where practical; provide clear build instructions, deterministic artifact conventions, and `make help` consistent with other GR-DOS projects.
@@ -53,7 +53,7 @@ M1 audited Tiny Tcl for these issues and fixed what it found (patches 0002 to 00
 - Integer arguments are 16-bit, except in `expr`, `incr`, `format` and `scan`.
 - The heap never returns memory to DOS.
 
-Past the object and stack limits, the interpreter either reports a Tcl error (stack) or stops cleanly with a message (sizes, out of memory). It does not corrupt memory at any site found so far. The audit of `int`-sized lengths was driven by tests and is not exhaustive. Further work continues to look for:
+Past the object and stack limits, the interpreter either reports a Tcl error (stack) or stops cleanly with a message (sizes, out of memory). It does not corrupt memory at any site found so far; M7 found one that could, `read`'s 4 KB stack buffer at the stack guard's limit, and fixed it (patch 0012; section 12). The audit of `int`-sized lengths was driven by tests and is not exhaustive. Further work continues to look for:
 
 - Near/far pointer validity, comparisons, and casts.
 - Object lengths and offsets that could exceed 16-bit ranges.
@@ -96,7 +96,7 @@ Additional rules:
 
 ### 4.2 The libc16 gap
 
-M1 measured the gap against libc16 0.04 (M1-REPORT.md, section 6). libc16 0.05 to 0.15 closed most of it, and **since M5 `TCL.EXE` links libc16 0.15 and libkitchen16 0.02** (`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`), with no Open Watcom runtime. How each need of M1's list is met:
+M1 measured the gap against libc16 0.04 (M1-REPORT.md, section 6). libc16 0.05 to 0.15 closed most of it, and **since M5 `TCL.EXE` links libc16 and libkitchen16 0.02** (libc16 0.15 in M5, 0.17 since M7) (`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`), with no Open Watcom runtime. How each need of M1's list is met:
 
 | Need | Functions | Met by |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ M1 measured the gap against libc16 0.04 (M1-REPORT.md, section 6). libc16 0.05 t
 | Environment | `environ` | Tcl16's `src/dosenv.c`, from the PSP's environment block, for `tclEnv.c` (patch 0010) |
 | Child processes | `exec` | Tcl16's `src/exec.c`, over libc16's `spawnve` (INT 21h 4B00h) and `libc16_systeme` (`COMSPEC /C`) |
 
-`panic` exits with status 255 itself, since libc16's `abort` exits with 3 (patch 0010). libc16 0.15 still lacks `fopen`'s update modes (`r+`, `w+`, `a+`), which Tiny Tcl's `open` passes through (section 10.1).
+`panic` exits with status 255 itself, since libc16's `abort` exits with 3 (patch 0010). libc16 0.17 (M7) added `fopen`'s update modes (`r+`, `w+`, `a+`), which Tiny Tcl's `open` passes through, for Tcl16 (gr-dos/libc16#36), clean-room as section 4.1 requires. That closed the gap: nothing in `TCL.EXE` comes from another C runtime.
 
 The M2 reference build of the Tcl 6.7 DOS port no longer compiles `tclCmdIL.c` against libc16 0.06 or later, for the same `qsort` reason. Tcl16 does not patch it (section 2.2).
 
@@ -242,6 +242,8 @@ Current layout:
 ```text
 tcl16/
 ├── README.md
+├── LICENSE                  the Tcl license, for Tcl16's own files (M7)
+├── VERSION                  the release, 0.01 (M7)
 ├── Makefile                 make help lists every target
 ├── src/                     Tcl16's own C: main.c (TCL.EXE's command line and
 │                            REPL), dostext.c and source.c (DOS text, source),
@@ -252,15 +254,17 @@ tcl16/
 ├── vendor/
 │   ├── tinytcl-6.8.1/       Tiny Tcl, unmodified, with its manifest
 │   └── LICENSE.tinytcl
-├── patches/                 0001–0009: Tcl16's patches to Tiny Tcl
+├── patches/                 0001–0012: Tcl16's patches to Tiny Tcl
 │   └── tcl67/               M2 reference: patches to the Tcl 6.7 DOS port
 ├── scripts/                 fetching, building, measuring, test runners
+├── examples/                example scripts, each run by make test (M7)
 ├── tests/
 │   ├── lang/ dos/           portable language and DOS cases
 │   ├── tinytcl/             Tiny Tcl-specific cases
 │   ├── tcl16/               TCL.EXE's command line, REPL and DOS text
 │   ├── tcl67/               M2 reference cases
-│   ├── grdos/               cases run on GR-DOS itself (make test-grdos)
+│   ├── grdos/ notgrdos/     cases for GR-DOS, and for other kernels
+│   ├── examples/            runs examples/
 │   ├── tools/               DOS test tools (FREEMEM, ERR2OUT, CHILD,
 │   │                        FAKEID...)
 │   ├── suite/               baselines for Tcl 6.7's own test suite
@@ -273,9 +277,9 @@ tcl16/
     └── PROVENANCE.md
 ```
 
-Planned additions: `docs/PORTING.md` if porting notes outgrow the reports, and `examples/` (M7). `docs/COMPATIBILITY.md` (M4) is kept current through M7.
+Planned additions: `docs/PORTING.md` if porting notes outgrow the reports. `docs/COMPATIBILITY.md` describes the current release.
 
-Keep upstream code and Tcl16's own code clearly separated. Respect each source's actual license (PROVENANCE.md). The license for Tcl16's own files is not yet decided and must be settled before a release (M7). The maintained product is a single self-contained DOS executable with no external dynamic runtime. Statically registered Tcl commands are the extension mechanism.
+Keep upstream code and Tcl16's own code clearly separated. Respect each source's actual license (PROVENANCE.md). **Settled in M7: Tcl16's own files are under the Tcl license** (`LICENSE`), the terms Tiny Tcl and Tcl are under, so all of `TCL.EXE`'s Tcl is under one license; libc16 and libkitchen16, linked in, are MIT. The maintained product is a single self-contained DOS executable with no external dynamic runtime. Statically registered Tcl commands are the extension mechanism.
 
 ## 10. Validation
 
@@ -285,7 +289,7 @@ Test the Tiny Tcl-based `TCL.EXE` with the shared suites, recording precise buil
 
 **DOS behavior:** paths with drive letters and backslashes, file enumeration, open/read/write/close, CRLF and ^Z scripts, environment variables, command-line arguments, redirection, shell builtins vs executables, exit codes, and low-memory execution.
 
-**Memory and portability:** very small free conventional memory, repeated allocations, nested procedures, 64 KiB boundaries, stack exhaustion, clean shutdown, 8086 compatibility, GR-DOS and at least one non-GR-DOS kernel. `make test` runs on DOSBox-X's kernel; `make test-grdos` (M6) boots a GR-DOS image under QEMU and runs `tests/grdos` there.
+**Memory and portability:** very small free conventional memory, repeated allocations, nested procedures, 64 KiB boundaries, stack exhaustion, clean shutdown, 8086 compatibility, GR-DOS and at least one non-GR-DOS kernel. Since M7 the same cases run on three kernels, each with its own command processor: `make test` on DOSBox-X's emulated 8086, and `make test-msdos` and `make test-grdos` on MS-DOS 4.00 and GR-DOS, booted from a floppy image under QEMU with a FAT16 hard disk as C: (`tests/run-dos -b`; COMPATIBILITY.md, section 8). `tests/tcl16/lowmem` runs `TCL.EXE` with too little memory to load, too little for its data, and enough. Real hardware is not yet validated.
 
 **Performance:** executable size, resident memory before/after initialization, peak script memory, startup time, representative script runtime, and ability to launch a child program. Clearly distinguish measured values from estimates.
 
@@ -297,7 +301,9 @@ Include automated regression tests wherever practical, with manual/emulated DOS 
 
 | Known failure | Cause | Due |
 | --- | --- | --- |
-| `tests/tcl16/openplus` (todo); `open` stops in `tests/suite/tinytcl.baseline` | libc16's `fopen` has no update modes (`r+`, `w+`, `a+`) | When libc16 has them; M7 at the latest |
+| (none) | | |
+
+M7 paid off `tests/tcl16/openplus` (it was todo) and the suite's stop in `open.tst`, with libc16 0.17's update modes. `open.tst` now runs to its end; its three failures are DOS deviations in the baseline: text-mode positions count CR LF, `~` in a message keeps DOS's `\`, and output is unbuffered (COMPATIBILITY.md, section 3.3).
 
 M4 paid off `tests/tinytcl/crlf` (it was todo) and `tests/tinytcl/ctrlz` (which recorded a ^Z run as a command): `source` now reads DOS text.
 
@@ -315,7 +321,7 @@ A milestone that adds a todo or a baseline entry must state why and when it is d
 | M4 | Interactive and script-mode `TCL.EXE`, CLI and error conventions | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md)) |
 | M5 | DOS filesystem, environment, and process integration | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md), sections 5 and 6) |
 | M6 | DOS/GR-DOS introspection using #46 when available | **Done** ([COMPATIBILITY.md](COMPATIBILITY.md), section 7) |
-| M7 | 8086, memory, compatibility, packaging, examples, and release validation | Next |
+| M7 | 8086, memory, compatibility, packaging, examples, and release validation | **Done** (release 0.01; [COMPATIBILITY.md](COMPATIBILITY.md), section 8) |
 
 All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 
@@ -343,11 +349,13 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 - GR-DOS identification through gr-dos/gr-dos#46's INT 21h AX=3347h, checked as GR-DOS's `GRVER` checks it.
 - `tests/tcl16/dosinfo` on DOSBox-X; `tests/tcl16/dosgr` with `FAKEID.COM` (`tests/tools/fakeid.asm`, after gr-dos's), which imitates GR-DOS's answer and six wrong ones; `make test-grdos` (`tests/run-grdos`), on GR-DOS itself under QEMU, against `GRVER`.
 
-### M7: Validation and release
+### M7: Validation and release (done)
 
-- 8086 and low-memory validation on GR-DOS and at least one other kernel, and on real hardware where available, including `exec` under real COMMAND.COM.
-- The libc16-linked release build, or a documented, measured reason for anything still taken from elsewhere.
-- Packaging, `examples/`, the license for Tcl16's own files, and the release.
+- **Kernels.** `tests/run-dos -b` boots a kernel from a floppy image under QEMU and runs every case with its own COMMAND.COM: `make test-msdos` (MS-DOS 4.00) and `make test-grdos` (GR-DOS 0.04) pass, as `make test` does on DOSBox-X's 8086. That found `exec`'s need for more than DOS's default `FILES=8`, now documented, and a DOSBox-X-only assumption in `tests/dos/pwd`. Real hardware: none was available; not validated.
+- **Low memory.** `CHILD -l` runs `TCL.EXE` with little memory (`tests/tcl16/lowmem`): it needs 170 KB to load and about 175 KB to run a script, and stops cleanly below that.
+- **Limits.** Patch 0012 moves `read`'s 4 KB buffer to the heap and shrinks `pwd`'s, which could run past the stack guard's margin (section 12).
+- **libc16 0.17**, with `fopen`'s update modes (gr-dos/libc16#36): `TCL.EXE` takes nothing from another C runtime, and section 10.1 has no debt left.
+- **Release.** `VERSION` (0.01), reported by `TCL /?`; `.github/workflows/release.yml` tags a merge that changes it and publishes `tcl.exe`; `LICENSE` (the Tcl license); `examples/`, run by `tests/examples`.
 
 ## 12. Non-goals and open decisions
 
@@ -364,13 +372,18 @@ All of M4 to M7 build on Tiny Tcl 6.8.1 with Tcl16's patches.
 
 **Settled in M6:** DOS and GR-DOS introspection, one `dos` command with options, using gr-dos/gr-dos#46's identification call (section 8.2).
 
-**Open engineering decisions,** each to be settled by the milestone named, with measurements:
+**Settled in M7:**
+
+- **Large local buffers.** At the deepest level the stack guard allows, a command has about 4.1 KB of stack (measured with `m1probe` recursing inside `expr`); the guard's 3 KB margin is for what runs between two `Tcl_Eval` levels. A search of Tiny Tcl and Tcl16 for local arrays of more than about 200 bytes found two: `read`'s 4,097 bytes, which could run past the stack into BSS there, and `pwd`'s 2,049 (`MAXPATHLEN`, as libc16 has no `PATH_MAX`). Patch 0012 puts `read`'s on the heap and gives `pwd` 128 bytes, a DOS path's most; `tests/tcl16/stkread` runs both at that depth. The others are Tcl's own 150 to 200-byte buffers, within the margin.
+- **The 32 KB stops stay stops.** A string, list or result past 32,767 bytes ends `TCL.EXE` with a message and status 255, cleanly (section 3.1). Making them Tcl errors would mean every site that grows a string checking and unwinding, through Tcl 6.7's core, which was written for a 32-bit `int`; the stops are safe, and a script that needs more than 32 KB in one value does not fit a 16-bit DOS program in any case.
+- **libc16 gaps: none.** libc16 0.17 has the update modes (section 4.2).
+- **Minimum RAM: about 175 KB free** to run a script (170 KB to load), measured by `tests/tcl16/lowmem`; at start `TCL.EXE` takes 154 KB (M6). Upper bounds are those of section 3.1: about 400 KB for the heaviest workload measured. COMPATIBILITY.md, section 8 gives what a machine needs, `FILES=` included.
+
+**Open work,** to be settled with measurements:
 
 | Decision | Options and constraints | Milestone |
 | --- | --- | --- |
-| 16-bit stack and object limits | **Stack size settled in M4: 48 KB** (below). Still open: moving large local buffers to the heap, and whether the 32 KB stops can become Tcl errors | M7 (limits) |
-| Remaining libc16 gaps | `fopen`'s update modes (section 10.1) | M7 |
-| Minimum RAM and supported upper bounds | 152 KB at start (M5), 154 KB with M6's `dos` (1.6 KB); about 400 KB for the heaviest measured workload | M7 |
+| Validation on real hardware and on other kernels (PC DOS, DR DOS, FreeDOS, MS-DOS 5 and later) | Emulated only so far (M7) | After 0.01 |
 
 **Stack size (settled in M4).** `TCL.EXE` links with a 48 KB stack (`make`'s `STACK`). `make measure` on DOSBox-X's emulated 8086:
 

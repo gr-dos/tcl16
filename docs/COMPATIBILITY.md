@@ -2,8 +2,8 @@
 
 What Tcl16's `TCL.EXE` is compatible with, where it differs, and the
 limits of a 16-bit real-mode DOS program. This file starts in M4 from
-[M1-REPORT.md](M1-REPORT.md), section 9, and is kept current through M7
-([DESIGN.md](DESIGN.md), section 11). Each statement here is checked by
+[M1-REPORT.md](M1-REPORT.md), section 9, and describes release 0.01
+(M7; [DESIGN.md](DESIGN.md), section 11). Each statement here is checked by
 a test named beside it, or is marked as not yet specified.
 
 ## 1. The language
@@ -115,11 +115,20 @@ bytes in such a script is reported as "command too long".
 
 `open`, `gets`, `read` and `puts` use libc16's text mode: `puts`
 writes `\n` as CR LF, and `gets` and `read` return LF for CR LF
-(`tests/dos/files`). `open` takes `r`, `w` and `a`; the update modes
-`r+`, `w+` and `a+` fail with "Invalid argument", because libc16's
-`fopen` does not have them yet (debt, due by M7; `tests/tcl16/openplus`,
-a todo). Error messages from the C library, such as "No such file or
-directory", are libc16's.
+(`tests/dos/files`). `open` takes `r`, `w`, `a` and, since M7 (libc16
+0.17), the update modes `r+`, `w+` and `a+` (`tests/tcl16/openplus`).
+Error messages from the C library, such as "No such file or directory",
+are libc16's.
+
+- **Positions count bytes in the file.** In text mode a line end is
+  two bytes, CR LF, so `tell` after `puts $f xyz` is 5, not 4, and
+  `seek` counts the same way.
+- **Output is unbuffered.** Each `puts` reaches DOS before it returns,
+  so another file id open on the same file sees it at once, `flush` is
+  never needed (and is harmless), and nothing written is lost if
+  `TCL.EXE` stops. On an update file a read may follow a write
+  directly; a write after a read needs a `seek` first, as in C, unless
+  the read reached the end of the file.
 
 ## 4. The `TCL.EXE` command line
 
@@ -311,7 +320,40 @@ answer, and wrong ones, imitated by `FAKEID.COM`,
 `tests/tools/fakeid.asm`), and `tests/grdos/kernel` (`make test-grdos`:
 GR-DOS itself, under QEMU, compared with `GRVER`).
 
-## 8. Other differences
+## 8. Where Tcl16 runs
+
+Tcl16 is a real-mode program for the 8086 and later, with no DOS
+extender. `TCL.EXE` 0.01 passes `make test`'s cases on each of these (M7):
+
+| Kernel and command processor | Machine | How | Make target |
+|---|---|---|---|
+| DOSBox-X's own DOS (reports 5.00) | Emulated 8086 (`cputype=8086`, CGA) | DOSBox-X | `make test` |
+| MS-DOS 4.00, with its COMMAND.COM (gr-dos's reference build) | Emulated 386 | QEMU, booted from floppy, C: a FAT16 hard disk | `make test-msdos` |
+| GR-DOS 0.04 with its identification call, with its COMMAND.COM | Emulated 386 | QEMU, as above | `make test-grdos` |
+
+Not yet validated: real hardware (no machine was available in M7), and
+other kernels (PC DOS, DR DOS, FreeDOS, MS-DOS 5 and later). Nothing in
+`TCL.EXE` depends on a particular kernel, but they have not been run.
+
+What it needs:
+
+- **Memory.** `TCL.EXE` needs about 170 KB of free conventional memory
+  to load and about 175 KB to run a small script; a larger script needs
+  more for its data (section 2). With less, DOS refuses to load it, or it
+  stops at once with "tcl16: out of memory" and exit status 255: it does
+  not crash (`tests/tcl16/lowmem`). A 256 KB machine, less what DOS
+  takes, leaves about enough for small scripts; 384 KB or more leaves
+  room for the programs `exec` runs.
+- **`FILES=20` in CONFIG.SYS** (or at least 10). `exec` uses DOS's file
+  table for its temporary files and redirection: with DOS's default
+  `FILES=8`, a pipeline fails with "Too many open files" when `TCL.EXE`'s
+  own output is redirected (measured on MS-DOS 4.00). The error is clean,
+  but the pipeline does not run. Each file a script has open takes one
+  more.
+- **A command processor** (COMSPEC) only for `exec` of batch files and
+  of COMMAND.COM's own commands (section 6).
+
+## 9. Other differences
 
 - Floating point in `expr`, `format` and `scan` is libkitchen16's
   software floating point, in every build: it does not use an 8087 even

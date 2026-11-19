@@ -6,7 +6,8 @@ with Open Watcom on Linux, for GR-DOS and other DOS kernels. It is not
 compatible with Tcl 7 or Tcl 8. The plan is in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: M6 is done; M7 is next.** There is no release yet.
+**Status: release 0.01 (M7).** Download `tcl.exe` from the
+[releases](https://github.com/gr-dos/tcl16/releases).
 
 - **M1** evaluated Tiny Tcl 6.8.1:
   [`docs/M1-REPORT.md`](docs/M1-REPORT.md).
@@ -25,14 +26,17 @@ compatible with Tcl 7 or Tcl 8. The plan is in
 - **M6** added the `dos` command: the DOS version, the kernel (GR-DOS,
   through its identification call, or `unknown`), GR-DOS's release, free
   memory and drives (COMPATIBILITY.md, section 7).
+- **M7** validated `TCL.EXE` on MS-DOS 4.00 and GR-DOS as well as
+  DOSBox-X's 8086, and with little memory; added `open`'s update modes
+  (libc16 0.17), `examples/`, the license and the release.
 
-Today's `TCL.EXE` is still a development build: Tiny Tcl with Tcl16's
-patches and DOS layer, linked with libc16 and libkitchen16. It passes
-the language, DOS and command-line tests on an emulated 8086, and Tcl
-6.7's own suite apart from documented DOS deviations, with one known
-failure scheduled to be fixed (`open`'s `r+`, `w+` and `a+`; DESIGN.md,
-section 10.1). M7 adds validation on real hardware and other DOS
-kernels, and the release (DESIGN.md, section 11).
+`TCL.EXE` is Tiny Tcl with Tcl16's patches and DOS layer, linked with
+libc16 and libkitchen16 and no other runtime. It passes the language, DOS,
+command-line and example tests on DOSBox-X's emulated 8086, on MS-DOS
+4.00 and on GR-DOS, and Tcl 6.7's own suite apart from documented DOS
+deviations (DESIGN.md, sections 10 and 11). It needs about 175 KB of free
+conventional memory and `FILES=20` (COMPATIBILITY.md, section 8). It has
+not yet been run on real hardware.
 The inputs are in [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
 The Tcl 6.7 DOS port is kept only as reference material from M2. Its
@@ -46,7 +50,8 @@ gcc with `-m32` (on Debian or Ubuntu, `gcc-multilib`).
 
     make                # build/dev/TCL.EXE, the development build
     make test           # tests/lang, dos, tinytcl, tcl16 under DOSBox-X, emulated 8086
-    make test-grdos     # tests/grdos on GR-DOS under QEMU
+    make test-grdos     # make test's cases on GR-DOS, booted under QEMU
+    make test-msdos     # ... and on MS-DOS 4.00
     make host           # Tiny Tcl built for Linux, as a 32-bit-int reference
     make test-host      # tests/lang with the host build
     make libc16-try     # build against libc16; report what it lacks
@@ -62,10 +67,12 @@ The M2 reference build of the Tcl 6.7 DOS port:
     make test-suite-tcl67   # Tcl 6.7's own test suite with it
     make libc16-try-tcl67 measure-tcl67   # the M2 experiment and measurements
 
-`make test-grdos` also needs mtools, `qemu-system-i386` and a GR-DOS
-floppy image with the identification call and `GRVER.EXE`: by default
-`../gr-dos/build/linux/tests/grver-grdos.img`, which gr-dos's
-`make test-grver` makes; set `GRDOS_IMAGE` for another.
+`make test-grdos` and `make test-msdos` also need mtools,
+`qemu-system-i386` and bootable floppy images from a gr-dos build: by
+default `../gr-dos/build/linux/tests/grver-grdos.img` (GR-DOS, with its
+identification call and `GRVER.EXE`) and `grver-msdos.img` (MS-DOS
+4.00), which gr-dos's `make test-grver` makes; set `GRDOS_IMAGE` or
+`MSDOS_IMAGE` for others.
 
 `make` fetches and checks the pinned libc16 and libkitchen16 releases
 (`scripts/fetch-libc16`, `scripts/fetch-libkitchen16`) and the Open
@@ -105,13 +112,25 @@ with status 1. Scripts may have DOS (CR LF) line ends and a trailing
         puts "GR-DOS [dos kernelversion], [dos memory] bytes free"
     }
 
+More in [`examples/`](examples): a directory listing, `wc`, a text
+search, system information and running a program.
+
 The dialect is Tcl 6.7: for example, `expr` takes one argument, so
 brace it (`expr {$x * 2}`), and there is no `switch` (use `case`).
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) has the details.
 
+## Releasing
+
+The version is the one line in `VERSION`, DOS style (0.01, 0.02, ...
+1.00), not semantic versioning; `TCL /?` reports it. When a PR that
+changes it is merged to main, the release workflow
+(`.github/workflows/release.yml`) builds and tests the merge commit, tags
+it `v<VERSION>` and publishes a GitHub release with `tcl.exe` attached.
+
 ## License
 
-Tiny Tcl is under the Tcl license: see the notices in its files and
-`vendor/LICENSE.tinytcl`. The Tcl 6.7 DOS port is not redistributed
-(PROVENANCE.md explains why). The license for tcl16's own files is not yet
-decided.
+tcl16's own files are under the Tcl license (`LICENSE`). Tiny Tcl is under
+the Tcl license too: see the notices in its files and
+`vendor/LICENSE.tinytcl`. `TCL.EXE` also contains libc16 and
+libkitchen16, under the MIT License. The Tcl 6.7 DOS port is not
+redistributed (PROVENANCE.md explains why).

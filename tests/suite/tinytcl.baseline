@@ -46,7 +46,9 @@ glob glob-3.1 glob-3.2 glob-3.3 glob-3.4 glob-3.5 glob-3.6 glob-3.7 glob-5.5
 # DOS has no permission to deny reading a directory.
 glob glob-6.1
 
-# Debt, due when libc16 has them (M7 at the latest): libc16's fopen has
-# no update modes (r+, w+, a+), so open-1.5 fails outside any catch and
-# the file stops there.
-open stopped
+# open.tst runs to its end since libc16 0.17's update modes (M7). DOS
+# deviations (docs/COMPATIBILITY.md, section 3.3): in text mode a line
+# end is two bytes, so tell counts CR LF (open-1.7: 17, not 14); a "~"
+# name in a message keeps DOS's "\" (open-3.2); output is unbuffered,
+# so a second file id sees what was written before flush (open-12.5).
+open open-1.7 open-3.2 open-12.5

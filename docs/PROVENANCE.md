@@ -68,8 +68,8 @@ the RCS file's head revision, as `vendor/LICENSE.tinytcl`, since the
 release archives omit it.
 
 These terms permit tcl16 to modify and distribute the code with the
-notices kept. Whether the chosen license for tcl16's own files is
-compatible is still to be decided (DESIGN.md, section 9).
+notices kept. tcl16's own files are under the same terms (`LICENSE`,
+M7; DESIGN.md, section 9).
 
 ## Patches
 
@@ -90,6 +90,7 @@ patch begins with its explanation; docs/M1-REPORT.md has the evidence.
 | `0009-dos-source.patch` | Removes `Tcl_EvalFile` and `Tcl_SmallFootprintEvalFile` from `tcldosut.c`: Tcl16's own `src/source.c` reads scripts as DOS text (M4) |
 | `0010-libc16.patch` | Links with libc16 and libkitchen16 (`TCL16_LIBC16`): `<kitchen16.h>` in `tclInt.h` and `panic.c`, `panic` exits with 255 rather than `abort`, `scan` calls Tcl16's `Tcl16_Sscanf` (`src/scan.c`), `tcldos.h` takes `opendir` from `src/dosdir.h`, and `tclEnv.c` reads the environment from `src/dosenv.c` and exports it as `TclEnviron` for `exec` (M5) |
 | `0011-dos-file.patch` | Renames `tcldosaz.c`'s `Tcl_FileCmd` to `TclDosFileCmd`, which Tcl16's own `file` (`src/file.c`) calls for the options it does not handle (M5) |
+| `0012-stack-buffers.patch` | `read` takes its 4 KB buffer from the heap, and `pwd` keeps a DOS path's 128 bytes rather than `MAXPATHLEN`'s 2,049, within the stack guard's margin (M7) |
 
 All patches are tcl16's own work, under Tiny Tcl's terms as modifications
 of it.
@@ -191,12 +192,15 @@ driver, kept for the M2 reference build), `scripts/`, `tests/` and
 gr-dos/perl16's `tests/run-dos`, and `tests/tools/err2out.c` is
 perl16's; `tests/tools/child.c`, `cat.c`, `wc.c` and `pwd.c` are
 tcl16's (M5). `tests/tools/fakeid.asm` (M6) is adapted from gr-dos's
-`tests/grver/fakeid.asm`, and `tests/run-grdos` boots GR-DOS as gr-dos's
-`scripts/smoke-test` does. `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
-with the 0.15 pin, and `scripts/fetch-libkitchen16` libkitchen16's
+`tests/grver/fakeid.asm`, and `tests/run-dos -b` (M7) boots a kernel as
+gr-dos's `scripts/smoke-test` does. `examples/` (M7) is tcl16's. All of
+these are under the Tcl license, in `LICENSE`. `scripts/fetch-libc16` is libc16's `consumers/fetch-libc16`
+with the 0.17 pin, and `scripts/fetch-libkitchen16` libkitchen16's
 `consumers/fetch-libkitchen16` with the 0.02 pin.
 
-None of this work touches libc16. The libc16 experiment
+M7 asked libc16 for one change, `fopen`'s update modes, which libc16
+made under its own clean-room rules (gr-dos/libc16#36, release 0.17);
+tcl16's code is not in libc16. The libc16 experiment
 (`scripts/try-libc16`) writes declaration-only shims inside
 `build/libc16-try` to see past missing headers; they are not proposed for
 libc16 (DESIGN.md, section 4).
@@ -205,10 +209,11 @@ libc16 (DESIGN.md, section 4).
 
 | Input | Pin |
 |---|---|
-| libc16 | release 0.15, `libc16-0.15.zip`, SHA-256 `042b6d2d18c381592cc929523835a695d7b2955a606bf44df6b2a43727f0d287` (`scripts/fetch-libc16`; M5; M4 pinned 0.07, M1 to M3 0.04) |
+| libc16 | release 0.17, `libc16-0.17.zip`, SHA-256 `@LIBC16_SHA@` (`scripts/fetch-libc16`; M7; M5 pinned 0.15, M4 0.07, M1 to M3 0.04) |
 | libkitchen16 | release 0.02, `libkitchen16-0.02.zip`, SHA-256 `2ca356b7d2a23442b7851b10c09cfa577ee3888eaf5b4b899f10ee494162cb85` (`scripts/fetch-libkitchen16`; M5) |
-| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 names (its `tools/fetch-watcom`; unchanged from 0.04 to 0.15). Since M5 only its compiler and linker are used for `TCL.EXE`; the M2 reference build still links its runtime |
+| Open Watcom | open-watcom-v2 release `2026-10-01-Build`, `ow-snapshot.tar.xz`, SHA-256 `e6aa1b1e40ac8bbf97658d2c70fff8a4242d6ca4a1c60806f2baa5317083d4fe`, the snapshot libc16 names (its `tools/fetch-watcom`; unchanged from 0.04 to 0.17). Since M5 only its compiler and linker are used for `TCL.EXE`; the M2 reference build still links its runtime |
 | DOSBox-X | the host's package, for the tests and measurements only |
+| QEMU, mtools | the host's packages, for `make test-grdos` and `make test-msdos` only, with floppy images from a gr-dos build |
 | gcc | the host's, with `-m32`, for `make host` only |
 
 M1 to M3 measured libc16 0.04 (M1-REPORT.md, section 6). M4 pins 0.07,
@@ -216,4 +221,5 @@ which has 0.05's `rename`, `unlink`, `remove`, `fseek` and `ftell` and
 0.06's `strtol`, `strcspn`, `strstr`, `qsort`, `abort`, `clearerr`,
 `isascii`, `fstat`, `getcwd` and `chdir`; DESIGN.md, section 4.2, has
 what is still missing. M5 pins 0.15 and libkitchen16 0.02, and links
-`TCL.EXE` with them (DESIGN.md, sections 4.2 and 5).
+`TCL.EXE` with them (DESIGN.md, sections 4.2 and 5). M7 pins 0.17, for
+`fopen`'s update modes.
