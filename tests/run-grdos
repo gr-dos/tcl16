@@ -1,0 +1,121 @@
+#!/usr/bin/env perl
+
+use 5.036;
+use warnings;
+use autodie qw(open close);
+use File::Basename qw(basename);
+use File::Path qw(make_path remove_tree);
+use File::Spec;
+use Time::HiRes qw(sleep time);
+
+=head1 NAME
+
+run-grdos - run Tcl test scripts with a DOS TCL.EXE on GR-DOS, under QEMU
+
+=head1 SYNOPSIS
+
+  tests/run-grdos IMAGE TCL.EXE DIR
+
+=head1 DESCRIPTION
+
+Copies IMAGE, a bootable GR-DOS floppy image, adds TCL.EXE and the cases
+of DIR (each F<NAME.tcl>, with its expected output F<NAME.out>; any other
+file is a fixture), and boots it in headless C<qemu-system-i386>. Its
+F<AUTOEXEC.BAT> is replaced by one that sends the console to COM1
+(C<CTTY AUX>) and runs each case as C<TCL NAME.TCL>, between marker lines;
+QEMU is stopped at the last marker, or after GRDOS_TIMEOUT seconds
+(default 120). Each case's output, with CR LF turned into LF, must be its
+F<NAME.out>. Exits 0 if every case passes.
+
+IMAGE must have GR-DOS's identification call (gr-dos/gr-dos#46), as
+gr-dos's own GRVER test image does (F<build/linux/tests/grver-grdos.img>,
+from its C<make test-grver>), and GRVER.EXE, which the cases compare with.
+IMAGE itself is not changed. The copy is kept in the work directory
+(F<build/run-grdos>, or WORK) when a case fails, or with KEEP=1.
+
+Needs mtools (C<mcopy>) and C<qemu-system-i386>. Boots the way gr-dos's
+F<scripts/smoke-test> does.
+
+=cut
+
+my ($image, $exe, $dir) = @ARGV;
+die "usage: $0 IMAGE TCL.EXE DIR\n" unless defined $dir;
+-f $_ or die "$_ not found\n" for $image, $exe;
+my $timeout = $ENV{GRDOS_TIMEOUT} // 120;
+my $work = File::Spec->rel2abs($ENV{WORK} // 'build/run-grdos');
+remove_tree($work);
+make_path($work);
+
+sub slurp ($f) { open my $h, '<:raw', $f; local $/; my $s = <$h>; close $h; $s }
+
+sub spew ($f, $s) { open my $h, '>:raw', $f; print $h $s; close $h }
+
+my $disk = "$work/GRDOS.IMG";
+system('cp', $image, $disk) == 0 or die "copy $image failed\n";
+
+my @cases = map { uc basename($_, '.tcl') } sort glob "$dir/*.tcl";
+die "no cases in $dir\n" unless @cases;
+my @files = ($exe, grep { -f && !/\.out$/ } glob "$dir/*");
+for my $f (@files) {
+    my $name = uc basename($f);
+    die "$f: not an 8.3 name\n" unless $name =~ /^[A-Z0-9_-]{1,8}(\.[A-Z0-9]{1,3})?$/;
+    system('mcopy', '-o', '-i', $disk, $f, "::/$name") == 0
+        or die "mcopy $f failed\n";
+}
+my @bat = ('@ECHO OFF', 'CTTY AUX', 'ECHO TCL16-BEGIN');
+push @bat, "ECHO TCL16-CASE $_", "A:\\TCL.EXE A:\\$_.TCL" for @cases;
+push @bat, 'ECHO TCL16-END', 'CTTY CON';
+spew("$work/AUTOEXEC.BAT", join '', map { "$_\r\n" } @bat);
+system('mcopy', '-o', '-i', $disk, "$work/AUTOEXEC.BAT", '::/AUTOEXEC.BAT') == 0
+    or die "mcopy AUTOEXEC.BAT failed\n";
+
+my $serial = "$work/serial.log";
+my $pid = fork // die "fork: $!\n";
+if ($pid == 0) {
+    open STDOUT, '>', "$work/qemu.log";
+    open STDERR, '>&', \*STDOUT;
+    exec 'qemu-system-i386', -display => 'none', -m => 4, '-no-reboot',
+        -drive => "file=$disk,if=floppy,index=0,format=raw",
+        -boot => 'a', -serial => "file:$serial", -monitor => 'none'
+        or die "exec qemu-system-i386: $!\n";
+}
+my $deadline = time + $timeout;
+my $finished;
+while (time < $deadline) {
+    if (-f $serial && slurp($serial) =~ /^TCL16-END\r?$/m) {
+        $finished = 1;
+        last;
+    }
+    last if waitpid($pid, 1) == $pid;
+    sleep 0.25;
+}
+kill 'TERM', $pid;
+waitpid $pid, 0;
+
+my $log = -f $serial ? slurp($serial) =~ s/\r\n/\n/gr : '';
+my %got;
+my $case;
+for (split /^/, $log) {
+    if (/^TCL16-CASE (\S+)$/) { $case = $1; $got{$case} = ''; next }
+    if (/^TCL16-END$/) { undef $case; next }
+    $got{$case} .= $_ if defined $case;
+}
+
+my ($pass, $fail) = (0, 0);
+for my $n (@cases) {
+    my $expect = slurp("$dir/" . lc($n) . '.out');
+    if (!defined $got{$n}) {
+        say "FAIL  $n: ", $finished ? 'no output' : "did not finish in ${timeout}s";
+        $fail++;
+    } elsif ($got{$n} ne $expect) {
+        spew("$work/$n.GOT", $got{$n});
+        say "FAIL  $n: output differs";
+        $fail++;
+    } else {
+        say "ok    $n";
+        $pass++;
+    }
+}
+say "$pass passed, $fail failed (work directory $work)";
+remove_tree($work) unless $fail || $ENV{KEEP};
+exit($fail ? 1 : 0);
